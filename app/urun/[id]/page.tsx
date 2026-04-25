@@ -7,6 +7,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { StokDurumuEtiket } from "@/components/StokDurumuEtiket";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { parseGorselUrlList } from "@/lib/gorsel-urls";
 import type { Kategori, Urun, Varyant } from "@/lib/types";
 
 function hexIcinSwatch(renkHex: string | null) {
@@ -93,7 +94,9 @@ export default function UrunDetayKatalogPage() {
       return;
     }
     if (secim >= varyantlar.length) {
-      setSecim(0);
+      queueMicrotask(() => {
+        setSecim(0);
+      });
     }
   }, [secim, varyantlar.length]);
 
@@ -122,6 +125,10 @@ export default function UrunDetayKatalogPage() {
   }
 
   const vSec = varyantlar[secim] ?? null;
+  const gorselListe = vSec
+    ? parseGorselUrlList(vSec.gorsel_url)
+    : [];
+  const anaGorsel = gorselListe[0];
 
   return (
     <div className="min-h-svh bg-slate-50">
@@ -140,10 +147,10 @@ export default function UrunDetayKatalogPage() {
         )}
 
         <div className="mt-8">
-          {vSec?.gorsel_url && (
+          {anaGorsel && vSec && (
             <div className="relative mb-6 aspect-[4/3] w-full overflow-hidden rounded-xl border border-slate-200 bg-white">
               <Image
-                src={vSec.gorsel_url}
+                src={anaGorsel}
                 alt={vSec.renk_adi}
                 fill
                 className="object-contain"

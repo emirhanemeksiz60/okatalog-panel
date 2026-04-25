@@ -11,14 +11,17 @@ import {
   type StokKodu,
 } from "@/lib/stok-durumu";
 import type { Kategori, Urun, Varyant } from "@/lib/types";
+import { gorselUrlListToAlan, parseGorselUrlList } from "@/lib/gorsel-urls";
 import { useToast } from "@/context/toast-context";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { VariantFotoYukle } from "@/components/VariantFotoYukle";
 
 type VaryantDraft = {
   id?: string;
   key: string;
   renk_adi: string;
-  gorsel_url: string;
+  /** Önizleme ve düzen; kayıtta virgüllü `gorsel_url` alanı */
+  gorselUrls: string[];
   stok_durumu: StokKodu;
 };
 
@@ -26,7 +29,7 @@ function newDraft(): VaryantDraft {
   return {
     key: `v-${Date.now()}-${Math.random()}`,
     renk_adi: "",
-    gorsel_url: "",
+    gorselUrls: [],
     stok_durumu: STOK_DURUMU_VARSAYILAN,
   };
 }
@@ -99,7 +102,7 @@ export function UrunForm({
         id: v.id,
         key: v.id,
         renk_adi: v.renk_adi,
-        gorsel_url: v.gorsel_url || "",
+        gorselUrls: parseGorselUrlList(v.gorsel_url),
         stok_durumu: stokDegeriToKod(v.stok_durumu),
       }));
     }
@@ -113,8 +116,7 @@ export function UrunForm({
       return;
     }
     const filled = (v: VaryantDraft) =>
-      v.renk_adi.trim().length > 0 ||
-      v.gorsel_url.trim().length > 0;
+      v.renk_adi.trim().length > 0 || v.gorselUrls.length > 0;
     const rows = variants.filter(filled);
     for (const v of rows) {
       if (!v.renk_adi.trim()) {
@@ -169,7 +171,10 @@ export function UrunForm({
         urun_id: uid!,
         renk_adi: v.renk_adi.trim(),
         renk_hex: rastgeleHexRenk(),
-        gorsel_url: v.gorsel_url.trim() || null,
+        gorsel_url: (() => {
+          const s = gorselUrlListToAlan(v.gorselUrls);
+          return s.length > 0 ? s : null;
+        })(),
         stok_durumu: stokDegeriToKod(v.stok_durumu),
       }));
 
@@ -310,90 +315,98 @@ export function UrunForm({
           </button>
         </div>
         <p className="mb-3 text-xs text-slate-500">
-          Her satırda renk adını serbest metin girin. Görsel ve stok bilgisini
-          doldurun; isterseniz aynı ürün için birden fazla varyant satırı ekleyin.
+          Her satırda renk, Cloudinary’e fotoğraf (birden çok) ve stok. Aynı ürün
+          için birden fazla varyant satırı ekleyin.
         </p>
-        <div className="space-y-3">
+        <div className="space-y-4">
           {variants.map((v, i) => (
             <div
               key={v.key}
-              className="space-y-3 rounded-lg border border-slate-200 bg-white p-3 sm:grid sm:grid-cols-[1fr_minmax(0,1.1fr)_minmax(0,0.85fr)] sm:gap-3 sm:space-y-0"
+              className="space-y-3 rounded-lg border border-slate-200 bg-white p-3"
             >
-              <div>
-                <label
-                  className="text-xs text-slate-500"
-                  htmlFor={`v-renk-${v.key}`}
-                >
-                  Renk adı
-                </label>
-                <input
-                  id={`v-renk-${v.key}`}
-                  className="mt-1 w-full rounded-md border border-slate-200 px-2.5 py-2 text-sm"
-                  value={v.renk_adi}
-                  onChange={(e) => {
-                    const next = [...variants];
-                    next[i] = { ...next[i]!, renk_adi: e.target.value };
-                    setVariants(next);
-                  }}
-                  placeholder="Örn. Siyah, Lacivert - Kırmızı - Beyaz"
-                  autoComplete="off"
-                />
+              <div className="grid gap-3 sm:grid-cols-2 sm:items-end">
+                <div>
+                  <label
+                    className="text-xs text-slate-500"
+                    htmlFor={`v-renk-${v.key}`}
+                  >
+                    Renk adı
+                  </label>
+                  <input
+                    id={`v-renk-${v.key}`}
+                    className="mt-1 w-full rounded-md border border-slate-200 px-2.5 py-2 text-sm"
+                    value={v.renk_adi}
+                    onChange={(e) => {
+                      const next = [...variants];
+                      next[i] = { ...next[i]!, renk_adi: e.target.value };
+                      setVariants(next);
+                    }}
+                    placeholder="Örn. Siyah, Lacivert - Kırmızı - Beyaz"
+                    autoComplete="off"
+                  />
+                </div>
+                <div>
+                  <label
+                    className="text-xs text-slate-500"
+                    htmlFor={`v-stok-${v.key}`}
+                  >
+                    Stok durumu
+                  </label>
+                  <select
+                    id={`v-stok-${v.key}`}
+                    className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm"
+                    value={v.stok_durumu}
+                    onChange={(e) => {
+                      setVariants((rows) => {
+                        const next = [...rows];
+                        next[i] = {
+                          ...next[i]!,
+                          stok_durumu: stokDegeriToKod(e.target.value),
+                        };
+                        return next;
+                      });
+                    }}
+                  >
+                    {STOK_DURUMU_SECENEKLERI.map((s) => (
+                      <option key={s.kod} value={s.kod}>
+                        {s.metin}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div>
-                <label
-                  className="text-xs text-slate-500"
-                  htmlFor={`v-gorsel-${v.key}`}
-                >
-                  Görsel URL
-                </label>
-                <input
-                  id={`v-gorsel-${v.key}`}
-                  className="mt-1 w-full rounded-md border border-slate-200 px-2.5 py-2 text-sm"
-                  value={v.gorsel_url}
-                  onChange={(e) => {
-                    const next = [...variants];
-                    next[i] = { ...next[i]!, gorsel_url: e.target.value };
-                    setVariants(next);
-                  }}
-                  placeholder="https://"
-                />
-              </div>
-              <div className="flex flex-col">
-                <label
-                  className="text-xs text-slate-500"
-                  htmlFor={`v-stok-${v.key}`}
-                >
-                  Stok durumu
-                </label>
-                <select
-                  id={`v-stok-${v.key}`}
-                  className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm"
-                  value={v.stok_durumu}
-                  onChange={(e) => {
-                    const next = [...variants];
+              <VariantFotoYukle
+                gorselUrls={v.gorselUrls}
+                onAddUrl={(url) => {
+                  setVariants((rows) => {
+                    const next = [...rows];
+                    const r = next[i]!;
                     next[i] = {
-                      ...next[i]!,
-                      stok_durumu: stokDegeriToKod(e.target.value),
+                      ...r,
+                      gorselUrls: [...r.gorselUrls, url],
                     };
-                    setVariants(next);
-                  }}
-                >
-                  {STOK_DURUMU_SECENEKLERI.map((s) => (
-                    <option key={s.kod} value={s.kod}>
-                      {s.metin}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setVariants((rows) => rows.filter((_, j) => j !== i))
-                  }
-                  className="mt-2 self-start text-xs text-red-600 hover:underline"
-                >
-                  Satırı kaldır
-                </button>
-              </div>
+                    return next;
+                  });
+                }}
+                onRemoveUrl={(j) => {
+                  setVariants((rows) => {
+                    const next = [...rows];
+                    const r = next[i]!;
+                    next[i] = {
+                      ...r,
+                      gorselUrls: r.gorselUrls.filter((_, x) => x !== j),
+                    };
+                    return next;
+                  });
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setVariants((rows) => rows.filter((_, j) => j !== i))}
+                className="text-xs text-red-600 hover:underline"
+              >
+                Varyant satırını kaldır
+              </button>
             </div>
           ))}
         </div>
