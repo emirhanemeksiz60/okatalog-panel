@@ -1,0 +1,418 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+import {
+  STOK_DURUMU_SECENEKLERI,
+  STOK_DURUMU_VARSAYILAN,
+  stokDegeriToKod,
+  type StokKodu,
+} from "@/lib/stok-durumu";
+import type { Kategori, Urun, Varyant } from "@/lib/types";
+import { useToast } from "@/context/toast-context";
+import { LoadingScreen } from "@/components/LoadingScreen";
+
+type VaryantDraft = {
+  id?: string;
+  key: string;
+  renk_adi: string;
+  gorsel_url: string;
+  stok_durumu: StokKodu;
+};
+
+function newDraft(): VaryantDraft {
+  return {
+    key: `v-${Date.now()}-${Math.random()}`,
+    renk_adi: "",
+    gorsel_url: "",
+    stok_durumu: STOK_DURUMU_VARSAYILAN,
+  };
+}
+
+/** Veritabanı alanı; panelde gösterilmez, kayıtta rastgele üretilir */
+function rastgeleHexRenk(): string {
+  if (globalThis.crypto?.getRandomValues) {
+    const buf = new Uint8Array(3);
+    globalThis.crypto.getRandomValues(buf);
+    return `#${[...buf].map((b) => b.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+  }
+  const n = Math.floor(Math.random() * 0x1000000);
+  return `#${n.toString(16).toUpperCase().padStart(6, "0")}`;
+}
+
+type Props = {
+  firmaId: string;
+  kategoriler: Kategori[];
+  productId: string | null;
+  initialUrun?: Urun | null;
+  initialVaryantlar: Varyant[] | null;
+  onSaveRedirect?: string;
+};
+
+export function UrunForm({
+  firmaId,
+  kategoriler,
+  productId,
+  initialUrun,
+  initialVaryantlar,
+  onSaveRedirect = "/dashboard/urunler",
+}: Props) {
+  const { show: toast } = useToast();
+  const router = useRouter();
+  const kategorilerUrunIcin = useMemo(
+    () => kategoriler.filter((k) => k.aktif && !k.ozel),
+    [kategoriler],
+  );
+  const [saving, setSaving] = useState(false);
+  const [urunKodu, setUrunKodu] = useState(initialUrun?.urun_kodu ?? "");
+  const [urunAdi, setUrunAdi] = useState(initialUrun?.urun_adi ?? "");
+  const [detay, setDetay] = useState(initialUrun?.detay ?? "");
+  const [kategoriId, setKategoriId] = useState(() => {
+    const k = kategoriler.filter((x) => x.aktif && !x.ozel);
+    if (
+      initialUrun?.kategori_id &&
+      k.some((x) => x.id === initialUrun.kategori_id)
+    ) {
+      return initialUrun.kategori_id;
+    }
+    return k[0]?.id ?? "";
+  });
+  const [yeniMi, setYeniMi] = useState(initialUrun?.yeni_mi ?? true);
+  const [guncelleme, setGuncelleme] = useState(
+    initialUrun?.guncelleme ?? "",
+  );
+  const [aktif, setAktif] = useState(initialUrun?.aktif ?? true);
+
+  useEffect(() => {
+    if (kategorilerUrunIcin.length === 0) return;
+    if (kategorilerUrunIcin.some((c) => c.id === kategoriId)) return;
+    queueMicrotask(() => {
+      setKategoriId(kategorilerUrunIcin[0]!.id);
+    });
+  }, [kategorilerUrunIcin, kategoriId]);
+
+  const [variants, setVariants] = useState<VaryantDraft[]>(() => {
+    if (initialVaryantlar && initialVaryantlar.length > 0) {
+      return initialVaryantlar.map((v) => ({
+        id: v.id,
+        key: v.id,
+        renk_adi: v.renk_adi,
+        gorsel_url: v.gorsel_url || "",
+        stok_durumu: stokDegeriToKod(v.stok_durumu),
+      }));
+    }
+    return [newDraft()];
+  });
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!kategoriId) {
+      toast("error", "Bir kategori seçin.");
+      return;
+    }
+    const filled = (v: VaryantDraft) =>
+      v.renk_adi.trim().length > 0 ||
+      v.gorsel_url.trim().length > 0;
+    const rows = variants.filter(filled);
+    for (const v of rows) {
+      if (!v.renk_adi.trim()) {
+        toast(
+          "error",
+          "Doldurulmuş her varyant için renk adı gerekli. Boş bırakın veya doldurun.",
+        );
+        return;
+      }
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        firma_id: firmaId,
+        kategori_id: kategoriId,
+        urun_kodu: urunKodu.trim(),
+        urun_adi: urunAdi.trim(),
+        detay: detay.trim() || null,
+        yeni_mi: yeniMi,
+        guncelleme: guncelleme.trim() || null,
+        aktif,
+      };
+
+      let uid = productId;
+      if (uid) {
+        const { error } = await supabase
+          .from("urunler")
+          .update(payload)
+          .eq("id", uid);
+        if (error) throw error;
+        const { error: dErr } = await supabase
+          .from("varyantlar")
+          .delete()
+          .eq("urun_id", uid);
+        if (dErr) throw dErr;
+      } else {
+        const { data, error } = await supabase
+          .from("urunler")
+          .insert(payload)
+          .select("id")
+          .single();
+        if (error) throw error;
+        uid = data?.id;
+      }
+
+      if (!uid) {
+        throw new Error("Ürün kaydedilemedi.");
+      }
+
+      const toInsert = rows.map((v) => ({
+        urun_id: uid!,
+        renk_adi: v.renk_adi.trim(),
+        renk_hex: rastgeleHexRenk(),
+        gorsel_url: v.gorsel_url.trim() || null,
+        stok_durumu: stokDegeriToKod(v.stok_durumu),
+      }));
+
+      if (toInsert.length) {
+        const { error: vErr } = await supabase
+          .from("varyantlar")
+          .insert(toInsert);
+        if (vErr) throw vErr;
+      }
+
+      toast("success", "Ürün kaydedildi.");
+      router.push(onSaveRedirect);
+    } catch (err) {
+      toast(
+        "error",
+        err instanceof Error ? err.message : "Kayıt başarısız.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (saving) {
+    return <LoadingScreen label="Kaydediliyor…" />;
+  }
+
+  return (
+    <form onSubmit={save} className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            Ürün kodu
+          </label>
+          <input
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            value={urunKodu}
+            onChange={(e) => setUrunKodu(e.target.value)}
+            required
+            autoComplete="off"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            Ürün adı
+          </label>
+          <input
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            value={urunAdi}
+            onChange={(e) => setUrunAdi(e.target.value)}
+            required
+          />
+        </div>
+      </div>
+      <div>
+        <label className="mb-1 block text-sm font-medium text-slate-700">
+          Kategori
+        </label>
+        <select
+          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          value={kategoriId}
+          onChange={(e) => setKategoriId(e.target.value)}
+          required
+        >
+          <option value="" disabled>
+            Kategori seçin
+          </option>
+          {kategorilerUrunIcin.map((k) => (
+            <option key={k.id} value={k.id}>
+              {k.kategori_adi}
+            </option>
+          ))}
+        </select>
+        {kategorilerUrunIcin.length === 0 && (
+          <p className="mt-1 text-xs text-amber-600">
+            Seçilebilir kategori yok.{" "}
+            <Link
+              className="underline"
+              href="/dashboard/kategoriler"
+            >
+              Kategoriler
+            </Link>{" "}
+            sayfasında &quot;gerçek&quot; (otomatik filtre olmayan) kategori
+            ekleyin.
+          </p>
+        )}
+      </div>
+      <div>
+        <label className="mb-1 block text-sm font-medium text-slate-700">
+          Detay
+        </label>
+        <textarea
+          className="min-h-[100px] w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          value={detay}
+          onChange={(e) => setDetay(e.target.value)}
+        />
+      </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <label className="inline-flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={yeniMi}
+            onChange={(e) => setYeniMi(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          Yeni ürün
+        </label>
+        <label className="inline-flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={aktif}
+            onChange={(e) => setAktif(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          Listede aktif
+        </label>
+      </div>
+      <div>
+        <label className="mb-1 block text-sm font-medium text-slate-700">
+          Güncelleme notu
+        </label>
+        <input
+          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          value={guncelleme}
+          onChange={(e) => setGuncelleme(e.target.value)}
+          placeholder="Örn. fiyat / beden / renk eklendi"
+        />
+      </div>
+
+      <div className="border-t border-slate-200 pt-4">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-base font-semibold text-slate-900">Varyantlar</h2>
+          <button
+            type="button"
+            onClick={() => setVariants((r) => [...r, newDraft()])}
+            className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-200"
+          >
+            + Varyant ekle
+          </button>
+        </div>
+        <p className="mb-3 text-xs text-slate-500">
+          Her satırda renk adını serbest metin girin. Görsel ve stok bilgisini
+          doldurun; isterseniz aynı ürün için birden fazla varyant satırı ekleyin.
+        </p>
+        <div className="space-y-3">
+          {variants.map((v, i) => (
+            <div
+              key={v.key}
+              className="space-y-3 rounded-lg border border-slate-200 bg-white p-3 sm:grid sm:grid-cols-[1fr_minmax(0,1.1fr)_minmax(0,0.85fr)] sm:gap-3 sm:space-y-0"
+            >
+              <div>
+                <label
+                  className="text-xs text-slate-500"
+                  htmlFor={`v-renk-${v.key}`}
+                >
+                  Renk adı
+                </label>
+                <input
+                  id={`v-renk-${v.key}`}
+                  className="mt-1 w-full rounded-md border border-slate-200 px-2.5 py-2 text-sm"
+                  value={v.renk_adi}
+                  onChange={(e) => {
+                    const next = [...variants];
+                    next[i] = { ...next[i]!, renk_adi: e.target.value };
+                    setVariants(next);
+                  }}
+                  placeholder="Örn. Siyah, Lacivert - Kırmızı - Beyaz"
+                  autoComplete="off"
+                />
+              </div>
+              <div>
+                <label
+                  className="text-xs text-slate-500"
+                  htmlFor={`v-gorsel-${v.key}`}
+                >
+                  Görsel URL
+                </label>
+                <input
+                  id={`v-gorsel-${v.key}`}
+                  className="mt-1 w-full rounded-md border border-slate-200 px-2.5 py-2 text-sm"
+                  value={v.gorsel_url}
+                  onChange={(e) => {
+                    const next = [...variants];
+                    next[i] = { ...next[i]!, gorsel_url: e.target.value };
+                    setVariants(next);
+                  }}
+                  placeholder="https://"
+                />
+              </div>
+              <div className="flex flex-col">
+                <label
+                  className="text-xs text-slate-500"
+                  htmlFor={`v-stok-${v.key}`}
+                >
+                  Stok durumu
+                </label>
+                <select
+                  id={`v-stok-${v.key}`}
+                  className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm"
+                  value={v.stok_durumu}
+                  onChange={(e) => {
+                    const next = [...variants];
+                    next[i] = {
+                      ...next[i]!,
+                      stok_durumu: stokDegeriToKod(e.target.value),
+                    };
+                    setVariants(next);
+                  }}
+                >
+                  {STOK_DURUMU_SECENEKLERI.map((s) => (
+                    <option key={s.kod} value={s.kod}>
+                      {s.metin}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setVariants((rows) => rows.filter((_, j) => j !== i))
+                  }
+                  className="mt-2 self-start text-xs text-red-600 hover:underline"
+                >
+                  Satırı kaldır
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4">
+        <button
+          type="submit"
+          className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
+        >
+          Kaydet
+        </button>
+        <Link
+          href="/dashboard/urunler"
+          className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Vazgeç
+        </Link>
+      </div>
+    </form>
+  );
+}
