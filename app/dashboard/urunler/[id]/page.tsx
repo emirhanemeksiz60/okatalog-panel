@@ -3,11 +3,16 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { tekilRotaParam } from "@/lib/tekil-rota-param";
+import {
+  type FirmaLimitBilgisi,
+  yukleFirmaLimitBilgisi,
+} from "@/lib/firma-limit-usage";
 import { supabase } from "@/lib/supabase";
 import type { Kategori, Urun, Varyant } from "@/lib/types";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
 import { UrunForm } from "@/components/UrunForm";
+import { LimitBilgiCubugu } from "@/components/LimitBilgiCubugu";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import Link from "next/link";
 
@@ -20,6 +25,7 @@ export default function UrunDuzenlePage() {
   const [kategoriler, setKategoriler] = useState<Kategori[]>([]);
   const [urun, setUrun] = useState<Urun | null>(null);
   const [varyantlar, setVaryantlar] = useState<Varyant[] | null>(null);
+  const [limitB, setLimitB] = useState<FirmaLimitBilgisi | null>(null);
   const firmaId = session?.firma.id;
 
   useEffect(() => {
@@ -28,7 +34,7 @@ export default function UrunDuzenlePage() {
     (async () => {
       setLoading(true);
       try {
-        const [kRes, uRes, vRes] = await Promise.all([
+        const [kRes, uRes, vRes, lim] = await Promise.all([
           supabase
             .from("kategoriler")
             .select("*")
@@ -40,7 +46,11 @@ export default function UrunDuzenlePage() {
             .select("*")
             .eq("urun_id", id)
             .order("id", { ascending: true }),
+          yukleFirmaLimitBilgisi(firmaId),
         ]);
+        if (!stop) {
+          setLimitB(lim);
+        }
         if (kRes.error) throw kRes.error;
         if (uRes.error) throw uRes.error;
         if (vRes.error) throw vRes.error;
@@ -78,6 +88,9 @@ export default function UrunDuzenlePage() {
   if (loading) {
     return <LoadingScreen label="Ürün yükleniyor…" />;
   }
+  if (urun && !limitB) {
+    return <LoadingScreen label="Limit bilgisi yükleniyor…" />;
+  }
   if (!urun) {
     return (
       <div className="space-y-4">
@@ -107,14 +120,23 @@ export default function UrunDuzenlePage() {
           Katalog ürün sayfası →
         </Link>
       </p>
+      {limitB && (
+        <div className="mt-3">
+          <LimitBilgiCubugu bilgi={limitB} sadece={["urun", "fotograf"]} />
+        </div>
+      )}
       <div className="mt-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <UrunForm
-          firmaId={session.firma.id}
-          kategoriler={kategoriler}
-          productId={urun.id}
-          initialUrun={urun}
-          initialVaryantlar={varyantlar ?? []}
-        />
+        {limitB && (
+          <UrunForm
+            firmaId={session.firma.id}
+            kategoriler={kategoriler}
+            productId={urun.id}
+            initialUrun={urun}
+            initialVaryantlar={varyantlar ?? []}
+            limitBilgisi={limitB}
+            yeniUrunEkle={false}
+          />
+        )}
       </div>
     </div>
   );

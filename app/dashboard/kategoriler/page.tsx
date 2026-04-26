@@ -2,9 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import {
+  type FirmaLimitBilgisi,
+  limitIletisimMesaj,
+  yukleFirmaLimitBilgisi,
+} from "@/lib/firma-limit-usage";
 import type { Kategori } from "@/lib/types";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
+import { LimitBilgiCubugu } from "@/components/LimitBilgiCubugu";
 import { LoadingScreen } from "@/components/LoadingScreen";
 
 function sortKategoriler(k: Kategori[]) {
@@ -17,22 +23,27 @@ export default function KategorilerPage() {
   const [loading, setLoading] = useState(true);
   const [list, setList] = useState<Kategori[]>([]);
   const [yeniAd, setYeniAd] = useState("");
+  const [limitB, setLimitB] = useState<FirmaLimitBilgisi | null>(null);
   const [edits, setEdits] = useState<Record<string, { ad: string; ozel: boolean; aktif: boolean }>>(
     {},
   );
   const firmaId = session?.firma.id;
-  const maxKat = session?.firma.max_kategori ?? 9999;
 
   const load = useCallback(async () => {
     if (!firmaId) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("kategoriler")
-        .select("*")
-        .eq("firma_id", firmaId)
-        .order("sira", { ascending: true });
-      if (error) throw error;
+      const [katRes, lim] = await Promise.all([
+        supabase
+          .from("kategoriler")
+          .select("*")
+          .eq("firma_id", firmaId)
+          .order("sira", { ascending: true }),
+        yukleFirmaLimitBilgisi(firmaId),
+      ]);
+      if (katRes.error) throw katRes.error;
+      setLimitB(lim);
+      const data = katRes.data;
       const next = sortKategoriler((data as Kategori[]) ?? []);
       setList(next);
       const e: Record<string, { ad: string; ozel: boolean; aktif: boolean }> = {};
@@ -65,8 +76,22 @@ export default function KategorilerPage() {
       toast("error", "Kategori adı girin.");
       return;
     }
-    if (list.length >= maxKat) {
-      toast("error", `En fazla ${maxKat} kategori ekleyebilirsiniz.`);
+    if (!firmaId) return;
+    try {
+      const can = await yukleFirmaLimitBilgisi(firmaId);
+      if (can.kullanim.kategori >= can.limits.max_kategori) {
+        toast(
+          "error",
+          limitIletisimMesaj(
+            "kategori",
+            can.kullanim.kategori,
+            can.limits.max_kategori,
+          ),
+        );
+        return;
+      }
+    } catch (err) {
+      toast("error", err instanceof Error ? err.message : "Limit okunamadı.");
       return;
     }
     try {
@@ -93,6 +118,7 @@ export default function KategorilerPage() {
         [k.id]: { ad: k.kategori_adi, ozel: k.ozel, aktif: k.aktif },
       }));
       toast("success", "Kategori eklendi.");
+      void load();
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "Eklenemedi.");
     }
@@ -151,6 +177,7 @@ export default function KategorilerPage() {
         return n;
       });
       toast("success", "Kategori silindi.");
+      void load();
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "Silinemedi.");
     }
@@ -204,6 +231,11 @@ export default function KategorilerPage() {
     <div>
       <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Kategoriler</h1>
       <p className="mt-1 text-sm text-slate-600">Sırala, düzenle ve yeni ekle</p>
+      {limitB && (
+        <div className="mt-3 max-w-2xl">
+          <LimitBilgiCubugu bilgi={limitB} sadece={["kategori"]} />
+        </div>
+      )}
       <form
         onSubmit={ekle}
         className="mt-6 flex max-w-2xl flex-col gap-2 sm:flex-row sm:items-end"

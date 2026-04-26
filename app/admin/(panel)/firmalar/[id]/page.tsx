@@ -250,9 +250,12 @@ export default function AdminFirmaDuzenle() {
               />
             </label>
             <p className="text-xs text-slate-500 sm:col-span-2">
-              Firma paneli girişi: veritabanında özel şifre sütunu yok; giriş şifresi
-              uygulama tarafında <code className="text-amber-200/90">admin123</code>{" "}
-              olarak tanımlı.
+              Esnaf girişi: <code className="text-amber-200/90">firmalar.panel_sifre</code>{" "}
+              (bcrypt) —{" "}
+              <code className="text-amber-200/90">verify_firma_password</code> RPC. Hash
+              atamak için Supabase&apos;de{" "}
+              <code className="text-amber-200/90">musteri_sifre_hash(plain)</code> sonucu
+              bu sütuna yazılabilir.
             </p>
           </div>
         </section>

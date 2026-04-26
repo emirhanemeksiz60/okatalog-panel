@@ -99,8 +99,8 @@ export default function LoginPage() {
           </button>
         </form>
         <p className="mt-6 text-center text-xs text-slate-500">
-          Demo: firma <code className="rounded bg-slate-100 px-1">cuzdancim</code>{" "}
-          / şifre <code className="rounded bg-slate-100 px-1">admin123</code>
+          Giriş için yönetici veya tedarikçi tarafından size verilen firma kodu ve
+          parolayı kullanın.
         </p>
         <p className="mt-3 text-center">
           <a

@@ -12,6 +12,11 @@ import {
 } from "@/lib/stok-durumu";
 import type { Kategori, Urun, Varyant } from "@/lib/types";
 import { gorselUrlListToAlan, parseGorselUrlList } from "@/lib/gorsel-urls";
+import {
+  type FirmaLimitBilgisi,
+  limitFotografMesaj,
+  limitIletisimMesaj,
+} from "@/lib/firma-limit-usage";
 import { useToast } from "@/context/toast-context";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { VariantFotoYukle } from "@/components/VariantFotoYukle";
@@ -52,7 +57,23 @@ type Props = {
   initialUrun?: Urun | null;
   initialVaryantlar: Varyant[] | null;
   onSaveRedirect?: string;
+  /** Firma sınır + güncel kullanım; listeler `yukleFirmaLimitBilgisi` */
+  limitBilgisi: FirmaLimitBilgisi;
+  /** Yeni ürün kaydı: ürün adedi +1 sınırı uygulanır. */
+  yeniUrunEkle: boolean;
 };
+
+function toplamFormFoto(vers: VaryantDraft[]): number {
+  return vers.reduce((s, v) => s + v.gorselUrls.length, 0);
+}
+
+function toplamDbVaryantFoto(vers: Varyant[] | null): number {
+  if (!vers || vers.length === 0) return 0;
+  return vers.reduce(
+    (s, v) => s + parseGorselUrlList(v.gorsel_url).length,
+    0,
+  );
+}
 
 export function UrunForm({
   firmaId,
@@ -61,6 +82,8 @@ export function UrunForm({
   initialUrun,
   initialVaryantlar,
   onSaveRedirect = "/dashboard/urunler",
+  limitBilgisi,
+  yeniUrunEkle,
 }: Props) {
   const { show: toast } = useToast();
   const router = useRouter();
@@ -109,10 +132,47 @@ export function UrunForm({
     return [newDraft()];
   });
 
+  function fotoCevreKayitIcin(
+    form: VaryantDraft[],
+    eklenecek: number = 0,
+  ): { ok: boolean; sonToplam: number; maks: number } {
+    const maksF = limitBilgisi.limits.max_fotograf;
+    if (yeniUrunEkle) {
+      const t = limitBilgisi.kullanim.fotograf + toplamFormFoto(form) + eklenecek;
+      return { ok: t <= maksF, sonToplam: t, maks: maksF };
+    }
+    const buUrunEskiFoto = toplamDbVaryantFoto(initialVaryantlar);
+    const t =
+      limitBilgisi.kullanim.fotograf -
+      buUrunEskiFoto +
+      toplamFormFoto(form) +
+      eklenecek;
+    return { ok: t <= maksF, sonToplam: t, maks: maksF };
+  }
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!kategoriId) {
       toast("error", "Bir kategori seçin.");
+      return;
+    }
+    if (yeniUrunEkle) {
+      const m = limitBilgisi.limits;
+      if (limitBilgisi.kullanim.urun >= m.max_urun) {
+        toast(
+          "error",
+          limitIletisimMesaj(
+            "urun",
+            limitBilgisi.kullanim.urun,
+            m.max_urun,
+          ),
+        );
+        return;
+      }
+    }
+    if (!fotoCevreKayitIcin(variants, 0).ok) {
+      const r = fotoCevreKayitIcin(variants, 0);
+      toast("error", limitFotografMesaj(r.sonToplam, r.maks));
       return;
     }
     const filled = (v: VaryantDraft) =>
@@ -378,6 +438,11 @@ export function UrunForm({
               <VariantFotoYukle
                 gorselUrls={v.gorselUrls}
                 onAddUrl={(url) => {
+                  const den = fotoCevreKayitIcin(variants, 1);
+                  if (!den.ok) {
+                    toast("error", limitFotografMesaj(den.sonToplam, den.maks));
+                    return;
+                  }
                   setVariants((rows) => {
                     const next = [...rows];
                     const r = next[i]!;

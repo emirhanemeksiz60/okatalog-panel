@@ -76,8 +76,11 @@ export default function YeniFirma() {
       </div>
       <h1 className="text-xl font-semibold text-white">Yeni firma ekle</h1>
       <p className="mt-1 text-sm text-slate-500">
-        Varsayılan limitler ve Başlangıç paketi atanır. Panel girişi:{" "}
-        <code className="text-amber-200/80">admin123</code> (sabit).
+        Varsayılan limitler ve Başlangıç paketi atanır. Esnaf parolası{" "}
+        <code className="text-amber-200/80">panel_sifre</code> (bcrypt) ile{" "}
+        <code className="text-amber-200/80">verify_firma_password</code> RPC: Supabase
+        &apos;de <code className="text-amber-200/80">musteri_sifre_hash</code> ile
+        &nbsp;set edin.
       </p>
       <form
         onSubmit={kaydet}

@@ -4,9 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { musteriSifreBcryptUret } from "@/lib/musteri-sifre";
 import { MUSTERI_LISTE_SUTUNLARI } from "@/lib/musteri-sutunlar";
+import {
+  type FirmaLimitBilgisi,
+  limitIletisimMesaj,
+  yukleFirmaLimitBilgisi,
+} from "@/lib/firma-limit-usage";
 import type { Musteri } from "@/lib/types";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
+import { LimitBilgiCubugu } from "@/components/LimitBilgiCubugu";
 import { LoadingScreen } from "@/components/LoadingScreen";
 
 export default function MusterilerPage() {
@@ -17,21 +23,25 @@ export default function MusterilerPage() {
   const [kod, setKod] = useState("");
   const [ad, setAd] = useState("");
   const [sifre, setSifre] = useState("");
+  const [limitB, setLimitB] = useState<FirmaLimitBilgisi | null>(null);
 
   const firmaId = session?.firma.id;
-  const maxM = session?.firma.max_musteri ?? 9999;
 
   const load = useCallback(async () => {
     if (!firmaId) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("musteriler")
-        .select(MUSTERI_LISTE_SUTUNLARI)
-        .eq("firma_id", firmaId)
-        .order("musteri_kodu", { ascending: true });
-      if (error) throw error;
-      setRows((data as Musteri[]) ?? []);
+      const [mRes, lim] = await Promise.all([
+        supabase
+          .from("musteriler")
+          .select(MUSTERI_LISTE_SUTUNLARI)
+          .eq("firma_id", firmaId)
+          .order("musteri_kodu", { ascending: true }),
+        yukleFirmaLimitBilgisi(firmaId),
+      ]);
+      if (mRes.error) throw mRes.error;
+      setLimitB(lim);
+      setRows((mRes.data as Musteri[]) ?? []);
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "Müşteriler yüklenemedi.");
     } finally {
@@ -59,8 +69,22 @@ export default function MusterilerPage() {
       toast("error", "Şifre en az 4 karakter olmalı.");
       return;
     }
-    if (rows.length >= maxM) {
-      toast("error", `En fazla ${maxM} müşteri.`);
+    if (!firmaId) return;
+    try {
+      const can = await yukleFirmaLimitBilgisi(firmaId);
+      if (can.kullanim.musteri >= can.limits.max_musteri) {
+        toast(
+          "error",
+          limitIletisimMesaj(
+            "musteri",
+            can.kullanim.musteri,
+            can.limits.max_musteri,
+          ),
+        );
+        return;
+      }
+    } catch (err) {
+      toast("error", err instanceof Error ? err.message : "Limit okunamadı.");
       return;
     }
     try {
@@ -86,6 +110,7 @@ export default function MusterilerPage() {
       setAd("");
       setSifre("");
       toast("success", "Müşteri eklendi.");
+      void load();
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "Eklenemedi.");
     }
@@ -98,6 +123,7 @@ export default function MusterilerPage() {
       if (error) throw error;
       setRows((r) => r.filter((x) => x.id !== m.id));
       toast("success", "Silindi.");
+      void load();
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "Silinemedi.");
     }
@@ -117,6 +143,11 @@ export default function MusterilerPage() {
         Kataloğu görüntüleyen bayiler / müşteriler. Şifreler Supabase (bcrypt) üzerinde
         hash’lenir; bu sayfada şifre metni listelenmez.
       </p>
+      {limitB && (
+        <div className="mt-3 max-w-3xl">
+          <LimitBilgiCubugu bilgi={limitB} sadece={["musteri"]} />
+        </div>
+      )}
 
       <form
         onSubmit={ekleMusteri}

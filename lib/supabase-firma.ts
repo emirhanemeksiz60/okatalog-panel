@@ -1,8 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import type { AuthSession, Firma } from "@/lib/types";
 
-const DUMMY_PAROLA = "admin123";
-
 /** `firmalar` — yalnız mevcut sütunlar (Supabase şema ile aynı) */
 export const FIRMA_SUTUN_SECIM = [
   "id",
@@ -46,28 +44,32 @@ export function firmaCoz(raw: unknown): Firma {
 }
 
 /**
- * Giriş: `firma_kodu` eşleşen aktif firma. Şifre: tabloda özel sütun olmadığı için
- * yalnızca sabit `admin123` kabul edilir.
+ * Giriş: `verify_firma_password` RPC (bcrypt, `panel_sifre` sütunu), sonra `firmalar` satırı.
  */
 export async function signInWithFirma(
   firmaKodu: string,
   sifre: string,
 ): Promise<{ data: AuthSession; error: null } | { data: null; error: string }> {
+  const { data: firmaId, error: rpcHata } = await supabase.rpc(
+    "verify_firma_password",
+    { p_firma_kodu: firmaKodu.trim(), p_sifre: sifre },
+  );
+  if (rpcHata) {
+    return { data: null, error: rpcHata.message };
+  }
+  if (firmaId == null || firmaId === "") {
+    return { data: null, error: "Firma kodu veya şifre hatalı" };
+  }
   const { data, error } = await supabase
     .from("firmalar")
     .select(FIRMA_SUTUN_SECIM)
-    .eq("firma_kodu", firmaKodu.trim())
-    .eq("aktif", true)
+    .eq("id", firmaId as string)
     .maybeSingle();
-
   if (error) {
     return { data: null, error: error.message };
   }
   if (!data) {
-    return { data: null, error: "Firma kodu bulunamadı veya devre dışı." };
-  }
-  if (sifre !== DUMMY_PAROLA) {
-    return { data: null, error: "Şifre hatalı." };
+    return { data: null, error: "Firma kodu veya şifre hatalı" };
   }
   return {
     data: {
