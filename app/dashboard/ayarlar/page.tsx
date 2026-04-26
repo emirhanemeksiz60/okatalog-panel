@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase";
+import { FIRMA_SUTUN_SECIM, firmaCoz } from "@/lib/supabase-firma";
 import type { Firma } from "@/lib/types";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
@@ -23,16 +24,13 @@ export default function AyarlarPage() {
       try {
         const { data, error } = await supabase
           .from("firmalar")
-          .select(
-            "id, firma_kodu, firma_adi, logo_url, slogan, max_kategori, max_fotograf, max_musteri, aktif",
-          )
+          .select(FIRMA_SUTUN_SECIM)
           .eq("id", fid)
           .maybeSingle();
         if (error) throw error;
         if (c) return;
         if (data) {
-          const f = data as Firma;
-          setFirma(f);
+          setFirma(firmaCoz(data));
         }
       } catch (e) {
         if (!c) {
@@ -103,9 +101,7 @@ export default function AyarlarPage() {
             if (!fid) return;
             const { data, error } = await supabase
               .from("firmalar")
-              .select(
-                "id, firma_kodu, firma_adi, logo_url, slogan, max_kategori, max_fotograf, max_musteri, aktif",
-              )
+              .select(FIRMA_SUTUN_SECIM)
               .eq("id", fid)
               .single();
             if (error) {
@@ -113,8 +109,9 @@ export default function AyarlarPage() {
               return;
             }
             if (data) {
-              setFirma(data as Firma);
-              login({ firma: data as Firma, loggedInAt: new Date().toISOString() });
+              const f = firmaCoz(data);
+              setFirma(f);
+              login({ firma: f, loggedInAt: new Date().toISOString() });
             }
             toast("success", "Bilgiler tazelendi.");
           }}

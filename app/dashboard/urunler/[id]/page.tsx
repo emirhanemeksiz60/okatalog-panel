@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { tekilRotaParam } from "@/lib/tekil-rota-param";
 import { supabase } from "@/lib/supabase";
 import type { Kategori, Urun, Varyant } from "@/lib/types";
 import { useAuth } from "@/context/auth-context";
@@ -12,7 +13,7 @@ import Link from "next/link";
 
 export default function UrunDuzenlePage() {
   const params = useParams();
-  const id = typeof params.id === "string" ? params.id : "";
+  const id = tekilRotaParam(params.id);
   const { session, ready } = useAuth();
   const { show: toast } = useToast();
   const [loading, setLoading] = useState(true);

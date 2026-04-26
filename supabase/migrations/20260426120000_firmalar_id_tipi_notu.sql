@@ -1,0 +1,6 @@
+-- Not: `firmalar.id` sütunu PostgREST `.eq('id', uuid-dize)` ile eşleşebilmesi için
+-- veritabanında genelde `uuid` tipi (veya `text` + tutarlı format) kullanılır.
+-- Şemayı doğrulamak için (SQL):
+--   select column_name, data_type, udt_name
+--   from information_schema.columns
+--   where table_schema = 'public' and table_name = 'firmalar' and column_name = 'id';

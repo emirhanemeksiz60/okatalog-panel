@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { signInWithFirma } from "@/lib/supabase";
+import { signInWithFirma } from "@/lib/supabase-firma";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -101,6 +101,14 @@ export default function LoginPage() {
         <p className="mt-6 text-center text-xs text-slate-500">
           Demo: firma <code className="rounded bg-slate-100 px-1">cuzdancim</code>{" "}
           / şifre <code className="rounded bg-slate-100 px-1">admin123</code>
+        </p>
+        <p className="mt-3 text-center">
+          <a
+            href="/admin/giris"
+            className="text-sm font-medium text-sky-700 underline decoration-sky-200 underline-offset-2 hover:text-sky-900"
+          >
+            Admin girişi
+          </a>
         </p>
       </div>
     </div>

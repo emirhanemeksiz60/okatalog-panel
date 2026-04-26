@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { tekilRotaParam } from "@/lib/tekil-rota-param";
 import { supabase } from "@/lib/supabase";
 import { StokDurumuEtiket } from "@/components/StokDurumuEtiket";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -32,7 +33,7 @@ function hexParlaklik(hex6: string): number {
 
 export default function UrunDetayKatalogPage() {
   const params = useParams();
-  const id = typeof params.id === "string" ? params.id : "";
+  const id = tekilRotaParam(params.id);
   const [loading, setLoading] = useState(true);
   const [hata, setHata] = useState<string | null>(null);
   const [urun, setUrun] = useState<Urun | null>(null);

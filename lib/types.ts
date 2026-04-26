@@ -7,7 +7,17 @@ export type Firma = {
   max_kategori: number;
   max_fotograf: number;
   max_musteri: number;
+  max_urun: number;
+  max_varyant: number;
+  /** baslangic | ... — DB: `aktif_paket` */
+  aktif_paket: string | null;
+  /** DB: `paket_bitis_tarihi` (ISO) */
+  paket_bitis_tarihi: string | null;
+  /** DB: `notlar` */
+  notlar: string | null;
   aktif: boolean;
+  /** DB: `created_at` (isteğe bağlı, sadece select) */
+  created_at?: string | null;
 };
 
 export type Musteri = {

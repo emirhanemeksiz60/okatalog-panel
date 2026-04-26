@@ -3,10 +3,10 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { AuthSession } from "@/lib/types";
 import {
-  clearSession,
-  getSessionFromStorage,
-  setSessionInStorage,
-} from "@/lib/supabase";
+  clearFirmSession,
+  getFirmSessionFromStorage,
+  setFirmSessionInStorage,
+} from "@/lib/firma-storage";
 
 type AuthContextValue = {
   session: AuthSession | null;
@@ -22,7 +22,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const s = getSessionFromStorage();
+    const s = getFirmSessionFromStorage();
     queueMicrotask(() => {
       setSession(s);
       setReady(true);
@@ -30,12 +30,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = useCallback((s: AuthSession) => {
-    setSessionInStorage(s);
+    setFirmSessionInStorage(s);
     setSession(s);
   }, []);
 
   const logout = useCallback(() => {
-    clearSession();
+    clearFirmSession();
     setSession(null);
   }, []);
 
