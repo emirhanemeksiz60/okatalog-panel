@@ -25,7 +25,10 @@ export type Musteri = {
   firma_id: string;
   musteri_kodu: string;
   musteri_adi: string;
-  sifre: string;
+  /**
+   * bcrypt; panel listesinde/insert yanıtında dönülmez, yalnız özel sorgu ile.
+   */
+  sifre?: string;
   aktif: boolean;
 };
 

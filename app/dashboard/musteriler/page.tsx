@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { musteriSifreBcryptUret } from "@/lib/musteri-sifre";
+import { MUSTERI_LISTE_SUTUNLARI } from "@/lib/musteri-sutunlar";
 import type { Musteri } from "@/lib/types";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
@@ -25,7 +27,7 @@ export default function MusterilerPage() {
     try {
       const { data, error } = await supabase
         .from("musteriler")
-        .select("*")
+        .select(MUSTERI_LISTE_SUTUNLARI)
         .eq("firma_id", firmaId)
         .order("musteri_kodu", { ascending: true });
       if (error) throw error;
@@ -62,16 +64,17 @@ export default function MusterilerPage() {
       return;
     }
     try {
+      const sifreHash = await musteriSifreBcryptUret(s);
       const { data, error } = await supabase
         .from("musteriler")
         .insert({
           firma_id: firmaId!,
           musteri_kodu: k,
           musteri_adi: a,
-          sifre: s,
+          sifre: sifreHash,
           aktif: true,
         })
-        .select()
+        .select(MUSTERI_LISTE_SUTUNLARI)
         .single();
       if (error) throw error;
       setRows((r) =>
@@ -111,7 +114,8 @@ export default function MusterilerPage() {
     <div>
       <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Müşteriler</h1>
       <p className="mt-1 text-sm text-slate-600">
-        Kataloğu görüntüleyen bayiler / müşteriler
+        Kataloğu görüntüleyen bayiler / müşteriler. Şifreler Supabase (bcrypt) üzerinde
+        hash’lenir; bu sayfada şifre metni listelenmez.
       </p>
 
       <form
@@ -159,7 +163,7 @@ export default function MusterilerPage() {
             <tr>
               <th className="px-4 py-3 font-medium">Kod</th>
               <th className="px-4 py-3 font-medium">Ad</th>
-              <th className="min-w-[10rem] px-4 py-3 font-medium">Yeni şifre</th>
+              <th className="min-w-[10rem] px-4 py-3 font-medium">Şifre değiştir</th>
               <th className="w-20 px-4 py-3 font-medium">Aktif</th>
               <th className="w-32 px-4 py-3 text-right font-medium">İşlemler</th>
             </tr>
@@ -221,7 +225,8 @@ function MusteriRow({
         aktif: m.aktif,
       };
       if (sifre.trim().length) {
-        payload.sifre = sifre.trim();
+        const h = await musteriSifreBcryptUret(sifre.trim());
+        payload.sifre = h;
       }
       const { error } = await supabase
         .from("musteriler")
