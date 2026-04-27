@@ -19,12 +19,38 @@ export const PAKET_BILGI_TABLO: {
   musteri: number;
   urun: number;
   fotograf: number;
+  /** Günlük AI (LLM) çağrı hakkı (referans) */
+  ai_gunluk: number;
   /** Paketler tablosundaki açıklama; örn. Enterprise fiyat notu */
   not?: string;
 }[] = [
-  { kod: "baslangic", ad: "Başlangıç", kategori: 10, musteri: 50, urun: 100, fotograf: 500 },
-  { kod: "profesyonel", ad: "Profesyonel", kategori: 20, musteri: 200, urun: 500, fotograf: 2000 },
-  { kod: "premium", ad: "Premium", kategori: 50, musteri: 500, urun: 2000, fotograf: 10000 },
+  {
+    kod: "baslangic",
+    ad: "Başlangıç",
+    kategori: 10,
+    musteri: 50,
+    urun: 100,
+    fotograf: 500,
+    ai_gunluk: 5,
+  },
+  {
+    kod: "profesyonel",
+    ad: "Profesyonel",
+    kategori: 20,
+    musteri: 200,
+    urun: 500,
+    fotograf: 2000,
+    ai_gunluk: 20,
+  },
+  {
+    kod: "premium",
+    ad: "Premium",
+    kategori: 50,
+    musteri: 500,
+    urun: 2000,
+    fotograf: 10000,
+    ai_gunluk: 50,
+  },
   {
     kod: "enterprise",
     ad: "Enterprise",
@@ -32,6 +58,7 @@ export const PAKET_BILGI_TABLO: {
     musteri: 2000,
     urun: 10000,
     fotograf: 50000,
+    ai_gunluk: 200,
     not: "Özel fiyatlandırma - İletişime geçin",
   },
 ];

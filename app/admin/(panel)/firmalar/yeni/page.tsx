@@ -15,6 +15,7 @@ const D = {
   max_urun: 100,
   max_varyant: 500,
   max_fotograf: 500,
+  max_ai_gunluk: 5,
   aktif_paket: "baslangic" as PaketKodu,
 };
 
@@ -50,6 +51,8 @@ export default function YeniFirma() {
           max_urun: D.max_urun,
           max_varyant: D.max_varyant,
           max_fotograf: D.max_fotograf,
+          max_ai_gunluk: D.max_ai_gunluk,
+          ai_kullanim_bugun: 0,
           aktif_paket: D.aktif_paket,
           paket_bitis_tarihi: null,
           notlar: null,

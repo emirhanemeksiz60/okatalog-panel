@@ -16,6 +16,7 @@ export default function AdminPaketlerPage() {
               <th className="px-3 py-2 font-medium">Müşteri</th>
               <th className="px-3 py-2 font-medium">Ürün</th>
               <th className="px-3 py-2 font-medium">Fotoğraf</th>
+              <th className="px-3 py-2 font-medium">AI (gün)</th>
               <th className="px-3 py-2 min-w-[14rem] font-medium">Not</th>
             </tr>
           </thead>
@@ -32,6 +33,9 @@ export default function AdminPaketlerPage() {
                 <td className="px-3 py-2 tabular-nums">{p.musteri}</td>
                 <td className="px-3 py-2 tabular-nums">{p.urun}</td>
                 <td className="px-3 py-2 tabular-nums">{p.fotograf}</td>
+                <td className="px-3 py-2 tabular-nums text-amber-200/90">
+                  {p.ai_gunluk}/gün
+                </td>
                 <td className="px-3 py-2 text-xs text-slate-500">
                   {p.not ? (
                     <span className="text-amber-200/80">{p.not}</span>

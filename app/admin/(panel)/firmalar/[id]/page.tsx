@@ -37,6 +37,7 @@ export default function AdminFirmaDuzenle() {
   const [fir, setFir] = useState<Firma | null>(null);
   const [kull, setKull] = useState<FirmaKullanimOzet | null>(null);
   const [kay, setKay] = useState(false);
+  const [sifirlaniyor, setSifirlaniyor] = useState(false);
   const [f, setF] = useState<Partial<Firma>>({});
   /** Tarih seçici (YYYY-MM-DD); `paket_bitis_tarihi` ile eşleşir */
   const [paketBitisYmd, setPaketBitisYmd] = useState("");
@@ -158,6 +159,7 @@ export default function AdminFirmaDuzenle() {
         max_urun: Math.max(0, Number(f.max_urun) || 0),
         max_varyant: Math.max(0, Number(f.max_varyant) || 0),
         max_fotograf: Math.max(0, Number(f.max_fotograf) || 0),
+        max_ai_gunluk: Math.max(0, Number(f.max_ai_gunluk) || 5),
         aktif_paket: pak,
         paket_bitis_tarihi: ymddenIso(paketBitisYmd),
         notlar: f.notlar == null ? null : String(f.notlar) || null,
@@ -174,6 +176,25 @@ export default function AdminFirmaDuzenle() {
       toast("error", e instanceof Error ? e.message : "Kayıt hatası");
     } finally {
       setKay(false);
+    }
+  }
+
+  async function aiSayacSifirla() {
+    if (!id || !fir) return;
+    setSifirlaniyor(true);
+    try {
+      const { error } = await supabase
+        .from("firmalar")
+        .update({ ai_kullanim_bugun: 0 })
+        .eq("id", id);
+      if (error) throw error;
+      setF((x) => ({ ...x, ai_kullanim_bugun: 0 }));
+      toast("success", "AI sayacı sıfırlandı (bugün).");
+      await yukle();
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "Sıfırlanamadı");
+    } finally {
+      setSifirlaniyor(false);
     }
   }
 
@@ -260,8 +281,7 @@ export default function AdminFirmaDuzenle() {
           </div>
         </section>
 
-        {(kull != null || kullanimUyarisi) && (
-          <section className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+        <section className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
             <h2 className="text-sm font-medium text-amber-200/90">Kullanım</h2>
             {kullanimUyarisi && !kull && (
               <p className="mt-2 text-sm text-amber-200/80">{kullanimUyarisi}</p>
@@ -299,8 +319,32 @@ export default function AdminFirmaDuzenle() {
                 </p>
               </div>
             )}
+            <div className={kull ? "mt-4 border-t border-slate-800 pt-4" : "mt-3"}>
+              <p className="text-sm text-slate-200">
+                AI Kullanım:{" "}
+                <span className="font-mono tabular-nums text-amber-200/90">
+                  {f.ai_kullanim_bugun ?? fir.ai_kullanim_bugun}/
+                  {Math.max(0, f.max_ai_gunluk ?? fir.max_ai_gunluk)}
+                </span>{" "}
+                (bugün)
+              </p>
+              <div className="mt-2">
+                <UsageBar
+                  etiket="AI (bugün)"
+                  guncel={f.ai_kullanim_bugun ?? fir.ai_kullanim_bugun}
+                  limit={Math.max(1, f.max_ai_gunluk ?? fir.max_ai_gunluk)}
+                />
+              </div>
+              <button
+                type="button"
+                disabled={sifirlaniyor}
+                onClick={() => void aiSayacSifirla()}
+                className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-200/90 hover:bg-amber-500/20 disabled:opacity-50"
+              >
+                {sifirlaniyor ? "Sıfırlanıyor…" : "AI Sayacını Sıfırla"}
+              </button>
+            </div>
           </section>
-        )}
 
         <section className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
           <h2 className="text-sm font-medium text-amber-200/90">Limitler</h2>
@@ -384,6 +428,27 @@ export default function AdminFirmaDuzenle() {
                   }));
                 }}
               />
+            </label>
+            <label className="block text-sm text-slate-300 sm:col-span-2">
+              Günlük AI Hak
+              <input
+                type="number"
+                min={0}
+                className="mt-1 w-full max-w-xs rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+                value={f.max_ai_gunluk ?? fir.max_ai_gunluk}
+                onChange={(e) => {
+                  const t = e.target.value;
+                  setF((x) => ({
+                    ...x,
+                    max_ai_gunluk:
+                      t === "" ? fir.max_ai_gunluk : parseInt(t, 10) || 0,
+                  }));
+                }}
+                placeholder="5"
+              />
+              <span className="mt-1 block text-xs text-slate-500">
+                Günlük limit (LLM) — varsayılan: 5
+              </span>
             </label>
           </div>
         </section>

@@ -9,6 +9,10 @@ export type Firma = {
   max_musteri: number;
   max_urun: number;
   max_varyant: number;
+  /** Günlük AI (LLM) hakkı üst sınırı */
+  max_ai_gunluk: number;
+  /** Bugün tüketilen AI hakları (sayaç) */
+  ai_kullanim_bugun: number;
   /** baslangic | ... — DB: `aktif_paket` */
   aktif_paket: string | null;
   /** DB: `paket_bitis_tarihi` (ISO) */
