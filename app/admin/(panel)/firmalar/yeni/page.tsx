@@ -10,7 +10,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import type { PaketKodu } from "@/lib/admin-paketler";
 
 const D = {
-  max_kategori: 10,
+  max_kategori: 5,
   max_musteri: 50,
   max_urun: 100,
   max_varyant: 500,

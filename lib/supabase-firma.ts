@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { aktifPaketKoduCoz } from "@/lib/admin-paketler";
 import type { AuthSession, Firma } from "@/lib/types";
 
 /** `firmalar` — yalnız mevcut sütunlar (Supabase şema ile aynı) */
@@ -39,7 +40,7 @@ export function firmaCoz(raw: unknown): Firma {
     max_varyant: Number(r.max_varyant ?? 500),
     max_ai_gunluk: Number(r.max_ai_gunluk ?? 5),
     ai_kullanim_bugun: Number(r.ai_kullanim_bugun ?? 0),
-    aktif_paket: (r.aktif_paket as string) ?? null,
+    aktif_paket: aktifPaketKoduCoz(r.aktif_paket as string | null),
     paket_bitis_tarihi: (r.paket_bitis_tarihi as string) ?? null,
     notlar: (r.notlar as string) ?? null,
     aktif: Boolean(r.aktif),

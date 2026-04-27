@@ -7,7 +7,12 @@ import { tekilRotaParam } from "@/lib/tekil-rota-param";
 import { supabase } from "@/lib/supabase";
 import { firmaCoz, FIRMA_SUTUN_SECIM } from "@/lib/supabase-firma";
 import { firmaKullanimOzet, type FirmaKullanimOzet } from "@/lib/admin-aggregates";
-import { PAKET_DROPDOWN, type PaketKodu } from "@/lib/admin-paketler";
+import {
+  PAKET_DROPDOWN,
+  aktifPaketKoduCoz,
+  paketOtomatikLimitler,
+  type PaketKodu,
+} from "@/lib/admin-paketler";
 import type { Firma } from "@/lib/types";
 import { useAdminAuth } from "@/context/admin-auth-context";
 import { useToast } from "@/context/toast-context";
@@ -140,11 +145,9 @@ export default function AdminFirmaDuzenle() {
     if (!id || !fir) return;
     setKay(true);
     try {
-      const pVal = f.aktif_paket;
-      const pak: PaketKodu | null =
-        pVal != null && PAKET_DROPDOWN.some((x) => x.value === pVal)
-          ? (pVal as PaketKodu)
-          : "baslangic";
+      const pak: PaketKodu = aktifPaketKoduCoz(
+        f.aktif_paket ?? fir.aktif_paket,
+      );
       const upd: Record<string, unknown> = {
         firma_kodu: (f.firma_kodu ?? fir.firma_kodu).trim().toLowerCase(),
         firma_adi: (f.firma_adi ?? fir.firma_adi).trim(),
@@ -347,7 +350,63 @@ export default function AdminFirmaDuzenle() {
           </section>
 
         <section className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+          <h2 className="text-sm font-medium text-amber-200/90">Paket</h2>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="block flex-1 text-sm text-slate-300">
+              Aktif paket
+              <select
+                className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+                value={aktifPaketKoduCoz(f.aktif_paket ?? fir.aktif_paket)}
+                onChange={(e) => {
+                  const v = e.target.value as PaketKodu;
+                  const lim = paketOtomatikLimitler(v);
+                  setF((x) => ({
+                    ...x,
+                    aktif_paket: v,
+                    ...(lim
+                      ? {
+                          max_kategori: lim.max_kategori,
+                          max_urun: lim.max_urun,
+                          max_fotograf: lim.max_fotograf,
+                          max_ai_gunluk: lim.max_ai_gunluk,
+                        }
+                      : {}),
+                  }));
+                }}
+              >
+                {PAKET_DROPDOWN.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.etiket}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-sm text-slate-300">
+              Paket bitiş
+              <input
+                type="date"
+                className="mt-1 w-full min-w-[12rem] rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+                value={paketBitisYmd}
+                onChange={(e) => setPaketBitisYmd(e.target.value)}
+              />
+            </label>
+            <p className="text-xs text-slate-500 sm:pb-2 sm:pl-1">
+              Bitişi kaldırmak için tarih alanını temizleyin ve kaydedin
+            </p>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Paket değişince (Enterprise dışında) kategori, ürün, fotoğraf ve günlük
+            AI limitleri aşağıda otomatik doldurulur. Müşteri limiti
+            paketle değişmez; yalnızca aşağıda manuel girilir.
+          </p>
+        </section>
+
+        <section className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
           <h2 className="text-sm font-medium text-amber-200/90">Limitler</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Sistem genelinde kategori üst sınırı 50; müşteri limiti yalnızca
+            burada belirlenir.
+          </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="block text-sm text-slate-300">
               Maks. kategori
@@ -380,6 +439,9 @@ export default function AdminFirmaDuzenle() {
                   }));
                 }}
               />
+              <span className="mt-1 block text-xs text-slate-500">
+                Paketle ilişkili değil; yalnızca manuel.
+              </span>
             </label>
             <label className="block text-sm text-slate-300">
               Maks. ürün
@@ -450,40 +512,6 @@ export default function AdminFirmaDuzenle() {
                 Günlük limit (LLM) — varsayılan: 5
               </span>
             </label>
-          </div>
-        </section>
-
-        <section className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
-          <h2 className="text-sm font-medium text-amber-200/90">Paket</h2>
-          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
-            <label className="block flex-1 text-sm text-slate-300">
-              Aktif paket
-              <select
-                className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white"
-                value={f.aktif_paket ?? "baslangic"}
-                onChange={(e) =>
-                  setF((x) => ({ ...x, aktif_paket: e.target.value || null }))
-                }
-              >
-                {PAKET_DROPDOWN.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.etiket}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm text-slate-300">
-              Paket bitiş
-              <input
-                type="date"
-                className="mt-1 w-full min-w-[12rem] rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white"
-                value={paketBitisYmd}
-                onChange={(e) => setPaketBitisYmd(e.target.value)}
-              />
-            </label>
-            <p className="text-xs text-slate-500 sm:pb-2 sm:pl-1">
-              Bitişi kaldırmak için tarih alanını temizleyin ve kaydedin
-            </p>
           </div>
         </section>
 
