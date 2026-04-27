@@ -60,6 +60,12 @@ export type Varyant = {
   renk_hex: string | null;
   gorsel_url: string | null;
   stok_durumu: string | null;
+  /** Opsiyonel: kaç adet stok; 0 = stok yok */
+  stok_miktar?: number | null;
+  /** stok_miktar ile birlikte: adet, düzine, kutu, … (DB varsayılanı adet) */
+  stok_birimi?: string | null;
+  /** Opsiyonel: minimum sipariş adedi */
+  min_siparis?: number | null;
 };
 
 export type AuthSession = {

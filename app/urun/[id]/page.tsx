@@ -189,8 +189,30 @@ export default function UrunDetayKatalogPage() {
                 })}
               </div>
               {vSec && (
-                <div className="mt-2">
+                <div className="mt-2 space-y-1.5">
                   <StokDurumuEtiket stokDegeri={vSec.stok_durumu} />
+                  {vSec.stok_miktar != null && (
+                    <p className="text-sm text-slate-700">
+                      {vSec.stok_miktar === 0 ? (
+                        <span className="font-medium text-amber-800">
+                          Stokta yok
+                        </span>
+                      ) : (
+                        <>
+                          Stok:{" "}
+                          <span className="font-medium text-slate-900">
+                            {vSec.stok_miktar}{" "}
+                            {vSec.stok_birimi?.trim() || "adet"}
+                          </span>
+                        </>
+                      )}
+                    </p>
+                  )}
+                  {vSec.min_siparis != null && vSec.min_siparis > 0 && (
+                    <p className="text-xs text-slate-600">
+                      Min. sipariş: {vSec.min_siparis} adet
+                    </p>
+                  )}
                 </div>
               )}
             </div>

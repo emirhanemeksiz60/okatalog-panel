@@ -21,6 +21,15 @@ import { useToast } from "@/context/toast-context";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { VariantFotoYukle } from "@/components/VariantFotoYukle";
 
+const STOK_BIRIMI_SECENEKLERI = [
+  "adet",
+  "düzine",
+  "kutu",
+  "çift",
+  "paket",
+  "koli",
+] as const;
+
 type VaryantDraft = {
   id?: string;
   key: string;
@@ -28,7 +37,19 @@ type VaryantDraft = {
   /** Önizleme ve düzen; kayıtta virgüllü `gorsel_url` alanı */
   gorselUrls: string[];
   stok_durumu: StokKodu;
+  /** Boş = veritabanına null */
+  stokMiktarStr: string;
+  stokBirimi: (typeof STOK_BIRIMI_SECENEKLERI)[number];
+  minSiparisStr: string;
 };
+
+function parseOptionalInt(s: string): number | null {
+  const t = s.trim();
+  if (t === "") return null;
+  const n = parseInt(t, 10);
+  if (Number.isNaN(n)) return null;
+  return n;
+}
 
 function newDraft(): VaryantDraft {
   return {
@@ -36,6 +57,9 @@ function newDraft(): VaryantDraft {
     renk_adi: "",
     gorselUrls: [],
     stok_durumu: STOK_DURUMU_VARSAYILAN,
+    stokMiktarStr: "",
+    stokBirimi: "adet",
+    minSiparisStr: "",
   };
 }
 
@@ -121,13 +145,30 @@ export function UrunForm({
 
   const [variants, setVariants] = useState<VaryantDraft[]>(() => {
     if (initialVaryantlar && initialVaryantlar.length > 0) {
-      return initialVaryantlar.map((v) => ({
+      return initialVaryantlar.map((v) => {
+        const birimRaw = v.stok_birimi ?? "adet";
+        const birim = STOK_BIRIMI_SECENEKLERI.includes(
+          birimRaw as (typeof STOK_BIRIMI_SECENEKLERI)[number],
+        )
+          ? (birimRaw as (typeof STOK_BIRIMI_SECENEKLERI)[number])
+          : "adet";
+        return {
         id: v.id,
         key: v.id,
         renk_adi: v.renk_adi,
         gorselUrls: parseGorselUrlList(v.gorsel_url),
         stok_durumu: stokDegeriToKod(v.stok_durumu),
-      }));
+        stokMiktarStr:
+          v.stok_miktar == null || Number.isNaN(v.stok_miktar)
+            ? ""
+            : String(v.stok_miktar),
+        stokBirimi: birim,
+        minSiparisStr:
+          v.min_siparis == null || Number.isNaN(v.min_siparis)
+            ? ""
+            : String(v.min_siparis),
+        };
+      });
     }
     return [newDraft()];
   });
@@ -236,6 +277,9 @@ export function UrunForm({
           return s.length > 0 ? s : null;
         })(),
         stok_durumu: stokDegeriToKod(v.stok_durumu),
+        stok_miktar: parseOptionalInt(v.stokMiktarStr),
+        stok_birimi: v.stokBirimi,
+        min_siparis: parseOptionalInt(v.minSiparisStr),
       }));
 
       if (toInsert.length) {
@@ -374,18 +418,26 @@ export function UrunForm({
             + Varyant ekle
           </button>
         </div>
-        <p className="mb-3 text-xs text-slate-500">
+        <p className="mb-2 text-xs text-slate-500">
           Her satırda renk, Cloudinary’e fotoğraf (birden çok) ve stok. Aynı ürün
           için birden fazla varyant satırı ekleyin.
         </p>
+        <p className="mb-3 text-xs text-slate-500">
+          Stok bilgisi opsiyoneldir. Müşterileriniz ürün detayında stok durumunu
+          görecektir.
+        </p>
         <div className="space-y-4">
-          {variants.map((v, i) => (
+          {variants.map((v, i) => {
+            const stokMiktarSayi = parseOptionalInt(v.stokMiktarStr);
+            const stokSifirGoster =
+              v.stokMiktarStr.trim() !== "" && stokMiktarSayi === 0;
+            return (
             <div
               key={v.key}
               className="space-y-3 rounded-lg border border-slate-200 bg-white p-3"
             >
-              <div className="grid gap-3 sm:grid-cols-2 sm:items-end">
-                <div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:items-end">
+                <div className="min-w-0 sm:col-span-2 lg:col-span-1">
                   <label
                     className="text-xs text-slate-500"
                     htmlFor={`v-renk-${v.key}`}
@@ -397,9 +449,11 @@ export function UrunForm({
                     className="mt-1 w-full rounded-md border border-slate-200 px-2.5 py-2 text-sm"
                     value={v.renk_adi}
                     onChange={(e) => {
-                      const next = [...variants];
-                      next[i] = { ...next[i]!, renk_adi: e.target.value };
-                      setVariants(next);
+                      setVariants((rows) => {
+                        const next = [...rows];
+                        next[i] = { ...next[i]!, renk_adi: e.target.value };
+                        return next;
+                      });
                     }}
                     placeholder="Örn. Siyah, Lacivert - Kırmızı - Beyaz"
                     autoComplete="off"
@@ -408,32 +462,122 @@ export function UrunForm({
                 <div>
                   <label
                     className="text-xs text-slate-500"
-                    htmlFor={`v-stok-${v.key}`}
+                    htmlFor={`v-stok-miktar-${v.key}`}
                   >
-                    Stok durumu
+                    Stok miktarı
                   </label>
-                  <select
-                    id={`v-stok-${v.key}`}
-                    className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm"
-                    value={v.stok_durumu}
+                  <input
+                    id={`v-stok-miktar-${v.key}`}
+                    className="mt-1 w-full rounded-md border border-slate-200 px-2.5 py-2 text-sm"
+                    value={v.stokMiktarStr}
                     onChange={(e) => {
                       setVariants((rows) => {
                         const next = [...rows];
+                        next[i] = { ...next[i]!, stokMiktarStr: e.target.value };
+                        return next;
+                      });
+                    }}
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Opsiyonel"
+                    autoComplete="off"
+                  />
+                </div>
+                <div>
+                  <label
+                    className="text-xs text-slate-500"
+                    htmlFor={`v-stok-birim-${v.key}`}
+                  >
+                    Stok birimi
+                  </label>
+                  <select
+                    id={`v-stok-birim-${v.key}`}
+                    className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm"
+                    value={v.stokBirimi}
+                    onChange={(e) => {
+                      setVariants((rows) => {
+                        const next = [...rows];
+                        const val = e.target.value;
                         next[i] = {
                           ...next[i]!,
-                          stok_durumu: stokDegeriToKod(e.target.value),
+                          stokBirimi: (STOK_BIRIMI_SECENEKLERI.includes(
+                            val as (typeof STOK_BIRIMI_SECENEKLERI)[number],
+                          )
+                            ? val
+                            : "adet") as (typeof STOK_BIRIMI_SECENEKLERI)[number],
                         };
                         return next;
                       });
                     }}
                   >
-                    {STOK_DURUMU_SECENEKLERI.map((s) => (
-                      <option key={s.kod} value={s.kod}>
-                        {s.metin}
+                    {STOK_BIRIMI_SECENEKLERI.map((b) => (
+                      <option key={b} value={b}>
+                        {b}
                       </option>
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label
+                    className="text-xs text-slate-500"
+                    htmlFor={`v-min-siparis-${v.key}`}
+                  >
+                    Min. sipariş
+                  </label>
+                  <input
+                    id={`v-min-siparis-${v.key}`}
+                    className="mt-1 w-full rounded-md border border-slate-200 px-2.5 py-2 text-sm"
+                    value={v.minSiparisStr}
+                    onChange={(e) => {
+                      setVariants((rows) => {
+                        const next = [...rows];
+                        next[i] = { ...next[i]!, minSiparisStr: e.target.value };
+                        return next;
+                      });
+                    }}
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Opsiyonel"
+                    autoComplete="off"
+                  />
+                </div>
+              </div>
+              {stokSifirGoster && (
+                <p
+                  className="text-xs font-medium text-amber-700"
+                  role="status"
+                >
+                  Stokta Yok
+                </p>
+              )}
+              <div className="max-w-md">
+                <label
+                  className="text-xs text-slate-500"
+                  htmlFor={`v-stok-durum-${v.key}`}
+                >
+                  Stok durumu
+                </label>
+                <select
+                  id={`v-stok-durum-${v.key}`}
+                  className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm"
+                  value={v.stok_durumu}
+                  onChange={(e) => {
+                    setVariants((rows) => {
+                      const next = [...rows];
+                      next[i] = {
+                        ...next[i]!,
+                        stok_durumu: stokDegeriToKod(e.target.value),
+                      };
+                      return next;
+                    });
+                  }}
+                >
+                  {STOK_DURUMU_SECENEKLERI.map((s) => (
+                    <option key={s.kod} value={s.kod}>
+                      {s.metin}
+                    </option>
+                  ))}
+                </select>
               </div>
               <VariantFotoYukle
                 gorselUrls={v.gorselUrls}
@@ -473,7 +617,8 @@ export function UrunForm({
                 Varyant satırını kaldır
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
