@@ -105,12 +105,21 @@ export default function UrunlerPage() {
             Katalogdaki tüm ürünler
           </p>
         </div>
-        <Link
-          href="/dashboard/urunler/ekle"
-          className="inline-flex items-center justify-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
-        >
-          Yeni ürün ekle
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/dashboard/urunler/excel-yukle"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+          >
+            <span aria-hidden="true">📗</span>
+            Excel ile toplu yükle
+          </Link>
+          <Link
+            href="/dashboard/urunler/ekle"
+            className="inline-flex items-center justify-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
+          >
+            Yeni ürün ekle
+          </Link>
+        </div>
       </div>
       <div className="mt-6 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full min-w-[640px] text-left text-sm">
