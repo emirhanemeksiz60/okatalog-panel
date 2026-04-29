@@ -122,10 +122,11 @@ export default function UrunlerPage() {
         </div>
       </div>
       <div className="mt-6 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full min-w-[640px] text-left text-sm">
+        <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
               <th className="px-4 py-3 font-medium">Kod</th>
+              <th className="px-4 py-3 font-medium">Barkod</th>
               <th className="px-4 py-3 font-medium">Ad</th>
               <th className="px-4 py-3 font-medium">Kategori</th>
               <th className="px-4 py-3 font-medium">Durum</th>
@@ -136,7 +137,7 @@ export default function UrunlerPage() {
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   className="px-4 py-8 text-center text-slate-500"
                 >
                   Henüz ürün yok. &quot;Yeni ürün ekle&quot; ile başlayın.
@@ -152,6 +153,9 @@ export default function UrunlerPage() {
                 >
                   <td className="px-4 py-3 font-mono text-slate-800">
                     {u.urun_kodu}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-slate-600">
+                    {u.barkod?.trim() || "—"}
                   </td>
                   <td className="px-4 py-3 text-slate-800">
                     <Link

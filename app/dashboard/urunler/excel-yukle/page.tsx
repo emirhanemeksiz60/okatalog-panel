@@ -13,6 +13,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 
 const HEADERS = [
   "urun_kodu",
+  "barkod",
   "urun_adi",
   "kategori_adi",
   "detay",
@@ -40,6 +41,7 @@ type ParsedVariant = {
 type ParsedRow = {
   rowNo: number;
   urun_kodu: string;
+  barkod: string | null;
   urun_adi: string;
   kategori_adi: string;
   detay: string | null;
@@ -88,6 +90,11 @@ function parseOptionalInt(v: unknown): number | null {
   return n;
 }
 
+function barkodGecerliMi(v: string): boolean {
+  if (!v.trim()) return true;
+  return /^[A-Z0-9]{1,13}$/.test(v.trim().toUpperCase());
+}
+
 function statusOf(r: ParsedRow): "error" | "warning" | "ready" {
   if (r.errors.length > 0) return "error";
   if (r.warnings.length > 0) return "warning";
@@ -99,6 +106,7 @@ function buildTemplateWorkbook() {
     [...HEADERS],
     [
       "Zorunlu. Ürün kodu",
+      "Opsiyonel barkod (A-Z/0-9, maks 13 karakter)",
       "Zorunlu. Ürün adı",
       "Zorunlu. Mevcut kategori adı",
       "Opsiyonel ürün detayı",
@@ -116,6 +124,7 @@ function buildTemplateWorkbook() {
     ],
     [
       "02P",
+      "8690000000001",
       "Polo Yaka Tişört",
       "Tişört",
       "Pamuklu kumaş",
@@ -133,6 +142,7 @@ function buildTemplateWorkbook() {
     ],
     [
       "08K",
+      "8690000000002",
       "Keten Pantolon",
       "Pantolon",
       "İnce keten",
@@ -278,6 +288,7 @@ export default function UrunlerExcelYuklePage() {
         for (let r = 2; r < aoa.length; r += 1) {
           const row = aoa[r] ?? [];
           const urun_kodu = toText(row[idx.urun_kodu]);
+          const barkod = toText(row[idx.barkod]).toUpperCase();
           const urun_adi = toText(row[idx.urun_adi]);
           const kategori_adi = toText(row[idx.kategori_adi]);
           const detayRaw = toText(row[idx.detay]);
@@ -303,6 +314,9 @@ export default function UrunlerExcelYuklePage() {
 
           if (!urun_kodu) errors.push("urun_kodu boş olamaz.");
           if (!urun_adi) errors.push("urun_adi boş olamaz.");
+          if (!barkodGecerliMi(barkod)) {
+            errors.push("barkod yalnızca harf/rakam içermeli ve en fazla 13 karakter olabilir.");
+          }
           if (!kategori_adi) {
             errors.push("kategori_adi boş olamaz.");
           } else if (!kategoriByName[kategori_adi.toLowerCase()]) {
@@ -317,6 +331,7 @@ export default function UrunlerExcelYuklePage() {
           out.push({
             rowNo: r + 1,
             urun_kodu,
+            barkod: barkod || null,
             urun_adi,
             kategori_adi,
             detay: detayRaw || null,
@@ -370,6 +385,7 @@ export default function UrunlerExcelYuklePage() {
           firma_id: firmaId,
           kategori_id: kat.id,
           urun_kodu: r.urun_kodu,
+          barkod: r.barkod,
           urun_adi: r.urun_adi,
           detay: r.detay,
           yeni_mi: r.yeni_mi,

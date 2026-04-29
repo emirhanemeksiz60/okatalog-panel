@@ -51,6 +51,11 @@ function parseOptionalInt(s: string): number | null {
   return n;
 }
 
+function barkodGecerliMi(v: string): boolean {
+  if (!v.trim()) return true;
+  return /^[A-Z0-9]{1,13}$/.test(v.trim().toUpperCase());
+}
+
 function newDraft(): VaryantDraft {
   return {
     key: `v-${Date.now()}-${Math.random()}`,
@@ -117,6 +122,7 @@ export function UrunForm({
   );
   const [saving, setSaving] = useState(false);
   const [urunKodu, setUrunKodu] = useState(initialUrun?.urun_kodu ?? "");
+  const [barkod, setBarkod] = useState(initialUrun?.barkod ?? "");
   const [urunAdi, setUrunAdi] = useState(initialUrun?.urun_adi ?? "");
   const [detay, setDetay] = useState(initialUrun?.detay ?? "");
   const [kategoriId, setKategoriId] = useState(() => {
@@ -228,6 +234,10 @@ export function UrunForm({
         return;
       }
     }
+    if (!barkodGecerliMi(barkod)) {
+      toast("error", "Barkod yalnızca harf/rakam içermeli ve en fazla 13 karakter olabilir.");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -235,6 +245,7 @@ export function UrunForm({
         firma_id: firmaId,
         kategori_id: kategoriId,
         urun_kodu: urunKodu.trim(),
+        barkod: barkod.trim() || null,
         urun_adi: urunAdi.trim(),
         detay: detay.trim() || null,
         yeni_mi: yeniMi,
@@ -317,6 +328,26 @@ export function UrunForm({
             value={urunKodu}
             onChange={(e) => setUrunKodu(e.target.value)}
             required
+            autoComplete="off"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            Barkod
+          </label>
+          <input
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            value={barkod}
+            onChange={(e) =>
+              setBarkod(
+                e.target.value
+                  .toUpperCase()
+                  .replace(/[^A-Z0-9]/g, "")
+                  .slice(0, 13),
+              )
+            }
+            placeholder="Opsiyonel (A-Z / 0-9, maks. 13)"
+            maxLength={13}
             autoComplete="off"
           />
         </div>

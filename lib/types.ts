@@ -50,6 +50,7 @@ export type Urun = {
   firma_id: string;
   kategori_id: string;
   urun_kodu: string;
+  barkod?: string | null;
   urun_adi: string;
   detay: string | null;
   yeni_mi: boolean;
