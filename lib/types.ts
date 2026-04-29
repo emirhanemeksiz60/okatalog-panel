@@ -29,6 +29,7 @@ export type Musteri = {
   firma_id: string;
   musteri_kodu: string;
   musteri_adi: string;
+  fiyat_listesi_id?: string | null;
   /**
    * bcrypt; panel listesinde/insert yanıtında dönülmez, yalnız özel sorgu ile.
    */
