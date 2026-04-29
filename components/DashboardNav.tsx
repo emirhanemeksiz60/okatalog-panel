@@ -6,6 +6,7 @@ import { useState } from "react";
 
 const links: { href: string; label: string }[] = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/dashboard/siparisler", label: "Siparişler" },
   { href: "/dashboard/urunler", label: "Ürünler" },
   { href: "/dashboard/kategoriler", label: "Kategoriler" },
   { href: "/dashboard/musteriler", label: "Müşteriler" },
