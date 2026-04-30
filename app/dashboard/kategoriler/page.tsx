@@ -42,12 +42,14 @@ export default function KategorilerPage() {
           .from("kategoriler")
           .select("*")
           .eq("firma_id", firmaId)
+          .is("deleted_at", null)
           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
           .order("sira", { ascending: true }),
         supabase
           .from("kategoriler")
           .select("*", { count: "exact", head: true })
-          .eq("firma_id", firmaId),
+          .eq("firma_id", firmaId)
+          .is("deleted_at", null),
         yukleFirmaLimitBilgisi(firmaId),
       ]);
       if (katRes.error) throw katRes.error;
@@ -181,7 +183,7 @@ export default function KategorilerPage() {
     try {
       const { error } = await supabase
         .from("kategoriler")
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq("id", k.id)
         .eq("firma_id", firmaId);
       if (error) throw error;

@@ -44,12 +44,14 @@ export default function UrunlerPage() {
           .from("urunler")
           .select("*")
           .eq("firma_id", firmaId)
+          .is("deleted_at", null)
           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
           .order("urun_kodu", { ascending: true }),
         supabase
           .from("urunler")
           .select("*", { count: "exact", head: true })
           .eq("firma_id", firmaId)
+          .is("deleted_at", null)
           .order("urun_kodu", { ascending: true }),
       ]);
       if (kRes.error) throw kRes.error;
@@ -84,15 +86,9 @@ export default function UrunlerPage() {
       return;
     }
     try {
-      const d1 = await supabase
-        .from("varyantlar")
-        .delete()
-        .eq("urun_id", ur.id)
-        .eq("firma_id", firmaId);
-      if (d1.error) throw d1.error;
       const d2 = await supabase
         .from("urunler")
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq("id", ur.id)
         .eq("firma_id", firmaId);
       if (d2.error) throw d2.error;

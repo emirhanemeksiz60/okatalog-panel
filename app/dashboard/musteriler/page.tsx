@@ -102,12 +102,14 @@ export default function MusterilerPage() {
           .from("musteriler")
           .select(MUSTERI_LISTE_SUTUNLARI)
           .eq("firma_id", firmaId)
+          .is("deleted_at", null)
           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
           .order("musteri_kodu", { ascending: true }),
         supabase
           .from("musteriler")
           .select("*", { count: "exact", head: true })
-          .eq("firma_id", firmaId),
+          .eq("firma_id", firmaId)
+          .is("deleted_at", null),
         yukleFirmaLimitBilgisi(firmaId),
       ]);
       if (mRes.error) throw mRes.error;
@@ -485,7 +487,7 @@ export default function MusterilerPage() {
     try {
       const { error } = await supabase
         .from("musteriler")
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq("id", m.id)
         .eq("firma_id", firmaId);
       if (error) throw error;
