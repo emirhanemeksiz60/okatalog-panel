@@ -18,6 +18,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 
 type ParaBirimi = "TRY" | "USD" | "EUR" | "GBP";
 type TabKey = "musteriler" | "fiyat";
+const PAGE_SIZE = 50;
 
 type FiyatListesi = {
   id: string;
@@ -67,6 +68,8 @@ export default function MusterilerPage() {
   const { show: toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<Musteri[]>([]);
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
   const [kod, setKod] = useState("");
   const [ad, setAd] = useState("");
   const [sifre, setSifre] = useState("");
@@ -94,23 +97,29 @@ export default function MusterilerPage() {
     if (!firmaId) return;
     setLoading(true);
     try {
-      const [mRes, lim] = await Promise.all([
+      const [mRes, mCountRes, lim] = await Promise.all([
         supabase
           .from("musteriler")
           .select(MUSTERI_LISTE_SUTUNLARI)
           .eq("firma_id", firmaId)
+          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
           .order("musteri_kodu", { ascending: true }),
+        supabase
+          .from("musteriler")
+          .select("*", { count: "exact", head: true })
+          .eq("firma_id", firmaId),
         yukleFirmaLimitBilgisi(firmaId),
       ]);
       if (mRes.error) throw mRes.error;
       setLimitB(lim);
+      setTotalCount(mCountRes.count ?? 0);
       setRows((mRes.data as Musteri[]) ?? []);
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "Müşteriler yüklenemedi.");
     } finally {
       setLoading(false);
     }
-  }, [firmaId, toast]);
+  }, [firmaId, page, toast]);
 
   useEffect(() => {
     if (!ready || !firmaId) return;
@@ -623,6 +632,29 @@ export default function MusterilerPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="mt-4 flex items-center justify-between">
+            <p className="text-sm text-slate-600">
+              Sayfa {page + 1} / {Math.max(1, Math.ceil(totalCount / PAGE_SIZE))}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 disabled:opacity-50"
+              >
+                Önceki
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage((p) => p + 1)}
+                disabled={(page + 1) * PAGE_SIZE >= totalCount}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 disabled:opacity-50"
+              >
+                Sonraki
+              </button>
+            </div>
           </div>
         </>
       )}

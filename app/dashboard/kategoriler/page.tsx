@@ -13,6 +13,8 @@ import { useToast } from "@/context/toast-context";
 import { LimitBilgiCubugu } from "@/components/LimitBilgiCubugu";
 import { LoadingScreen } from "@/components/LoadingScreen";
 
+const PAGE_SIZE = 50;
+
 function sortKategoriler(k: Kategori[]) {
   return [...k].sort((a, b) => a.sira - b.sira || a.kategori_adi.localeCompare(b.kategori_adi));
 }
@@ -27,22 +29,30 @@ export default function KategorilerPage() {
   const [edits, setEdits] = useState<Record<string, { ad: string; ozel: boolean; aktif: boolean }>>(
     {},
   );
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
   const firmaId = session?.firma.id;
 
   const load = useCallback(async () => {
     if (!firmaId) return;
     setLoading(true);
     try {
-      const [katRes, lim] = await Promise.all([
+      const [katRes, katCountRes, lim] = await Promise.all([
         supabase
           .from("kategoriler")
           .select("*")
           .eq("firma_id", firmaId)
+          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
           .order("sira", { ascending: true }),
+        supabase
+          .from("kategoriler")
+          .select("*", { count: "exact", head: true })
+          .eq("firma_id", firmaId),
         yukleFirmaLimitBilgisi(firmaId),
       ]);
       if (katRes.error) throw katRes.error;
       setLimitB(lim);
+      setTotalCount(katCountRes.count ?? 0);
       const data = katRes.data;
       const next = sortKategoriler((data as Kategori[]) ?? []);
       setList(next);
@@ -60,7 +70,7 @@ export default function KategorilerPage() {
     } finally {
       setLoading(false);
     }
-  }, [firmaId, toast]);
+  }, [firmaId, page, toast]);
 
   useEffect(() => {
     if (!ready || !firmaId) return;
@@ -388,6 +398,29 @@ export default function KategorilerPage() {
             )}
           </tbody>
         </table>
+      </div>
+      <div className="mt-4 flex items-center justify-between">
+        <p className="text-sm text-slate-600">
+          Sayfa {page + 1} / {Math.max(1, Math.ceil(totalCount / PAGE_SIZE))}
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 disabled:opacity-50"
+          >
+            Önceki
+          </button>
+          <button
+            type="button"
+            onClick={() => setPage((p) => p + 1)}
+            disabled={(page + 1) * PAGE_SIZE >= totalCount}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 disabled:opacity-50"
+          >
+            Sonraki
+          </button>
+        </div>
       </div>
     </div>
   );

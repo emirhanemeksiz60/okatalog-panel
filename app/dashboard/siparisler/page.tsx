@@ -7,6 +7,8 @@ import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
 import { LoadingScreen } from "@/components/LoadingScreen";
 
+const PAGE_SIZE = 50;
+
 type SiparisDurum =
   | "istek"
   | "duzenlendi"
@@ -57,18 +59,25 @@ export default function SiparislerPage() {
   const [rows, setRows] = useState<SiparisRow[]>([]);
   const [musteriById, setMusteriById] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
   const firmaId = session?.firma.id;
 
   const load = useCallback(async () => {
     if (!firmaId) return;
     setLoading(true);
     try {
-      const [sRes, mRes] = await Promise.all([
+      const [sRes, sCountRes, mRes] = await Promise.all([
         supabase
           .from("siparisler")
           .select("*")
           .eq("firma_id", firmaId)
+          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
           .order("created_at", { ascending: false }),
+        supabase
+          .from("siparisler")
+          .select("*", { count: "exact", head: true })
+          .eq("firma_id", firmaId),
         supabase
           .from("musteriler")
           .select("id,musteri_adi")
@@ -76,6 +85,7 @@ export default function SiparislerPage() {
       ]);
       if (sRes.error) throw sRes.error;
       if (mRes.error) throw mRes.error;
+      setTotalCount(sCountRes.count ?? 0);
       const musteriMap: Record<string, string> = {};
       ((mRes.data as Record<string, unknown>[]) ?? []).forEach((m) => {
         const id = String(m.id ?? "");
@@ -98,7 +108,7 @@ export default function SiparislerPage() {
     } finally {
       setLoading(false);
     }
-  }, [firmaId, toast]);
+  }, [firmaId, page, toast]);
 
   useEffect(() => {
     if (!ready || !firmaId) return;
@@ -208,6 +218,29 @@ export default function SiparislerPage() {
             ))}
           </tbody>
         </table>
+      </div>
+      <div className="mt-4 flex items-center justify-between">
+        <p className="text-sm text-slate-600">
+          Sayfa {page + 1} / {Math.max(1, Math.ceil(totalCount / PAGE_SIZE))}
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 disabled:opacity-50"
+          >
+            Önceki
+          </button>
+          <button
+            type="button"
+            onClick={() => setPage((p) => p + 1)}
+            disabled={(page + 1) * PAGE_SIZE >= totalCount}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 disabled:opacity-50"
+          >
+            Sonraki
+          </button>
+        </div>
       </div>
     </div>
   );

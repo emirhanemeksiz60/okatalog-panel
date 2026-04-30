@@ -8,6 +8,8 @@ import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
 import { LoadingScreen } from "@/components/LoadingScreen";
 
+const PAGE_SIZE = 50;
+
 function statusLabel(u: Urun): { text: string; className: string } {
   if (u.yeni_mi) {
     return { text: "Yeni", className: "bg-emerald-100 text-emerald-800" };
@@ -24,6 +26,8 @@ export default function UrunlerPage() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<Urun[]>([]);
   const [katById, setKatById] = useState<Record<string, string>>({});
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
 
   const firmaId = session?.firma.id;
 
@@ -31,7 +35,7 @@ export default function UrunlerPage() {
     if (!firmaId) return;
     setLoading(true);
     try {
-      const [kRes, uRes] = await Promise.all([
+      const [kRes, uRes, uCountRes] = await Promise.all([
         supabase
           .from("kategoriler")
           .select("id, kategori_adi")
@@ -39,6 +43,12 @@ export default function UrunlerPage() {
         supabase
           .from("urunler")
           .select("*")
+          .eq("firma_id", firmaId)
+          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+          .order("urun_kodu", { ascending: true }),
+        supabase
+          .from("urunler")
+          .select("*", { count: "exact", head: true })
           .eq("firma_id", firmaId)
           .order("urun_kodu", { ascending: true }),
       ]);
@@ -50,12 +60,13 @@ export default function UrunlerPage() {
       });
       setKatById(m);
       setRows((uRes.data as Urun[]) ?? []);
+      setTotalCount(uCountRes.count ?? 0);
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "Ürünler yüklenemedi.");
     } finally {
       setLoading(false);
     }
-  }, [firmaId, toast]);
+  }, [firmaId, page, toast]);
 
   useEffect(() => {
     if (!ready || !firmaId) return;
@@ -194,6 +205,29 @@ export default function UrunlerPage() {
             })}
           </tbody>
         </table>
+      </div>
+      <div className="mt-4 flex items-center justify-between">
+        <p className="text-sm text-slate-600">
+          Sayfa {page + 1} / {Math.max(1, Math.ceil(totalCount / PAGE_SIZE))}
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 disabled:opacity-50"
+          >
+            Önceki
+          </button>
+          <button
+            type="button"
+            onClick={() => setPage((p) => p + 1)}
+            disabled={(page + 1) * PAGE_SIZE >= totalCount}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 disabled:opacity-50"
+          >
+            Sonraki
+          </button>
+        </div>
       </div>
     </div>
   );
