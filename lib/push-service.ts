@@ -10,6 +10,7 @@ export async function sendPushNotification(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "x-api-secret": process.env.NEXT_PUBLIC_INTERNAL_API_SECRET ?? "",
     },
     body: JSON.stringify({
       token: t,

@@ -11,6 +11,11 @@ type PushBody = {
 
 export async function POST(req: Request) {
   try {
+    const apiSecret = req.headers.get("x-api-secret");
+    if (apiSecret !== process.env.INTERNAL_API_SECRET) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = (await req.json()) as PushBody;
     const token = String(body?.token ?? "").trim();
     const title = String(body?.title ?? "").trim();
