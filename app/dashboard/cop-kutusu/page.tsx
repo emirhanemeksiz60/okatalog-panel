@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { aktiviteKaydet } from "@/lib/aktivite-logu";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -111,6 +112,16 @@ export default function CopKutusuPage() {
         .eq("id", id)
         .eq("firma_id", firmaId);
       if (error) throw error;
+      if (table === "urunler") {
+        const ur = urunler.find((x) => x.id === id);
+        await aktiviteKaydet({
+          firmaId,
+          islem: "urun_geri_alindi",
+          hedefTablo: "urunler",
+          hedefId: id,
+          detay: ur ? { urun_adi: ur.urun_adi } : undefined,
+        });
+      }
       toast("success", "Kayıt geri alındı.");
       await load();
     } catch (e) {

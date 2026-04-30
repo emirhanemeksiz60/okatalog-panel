@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { aktiviteKaydet } from "@/lib/aktivite-logu";
 import type { Kategori, Urun } from "@/lib/types";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
@@ -92,6 +93,13 @@ export default function UrunlerPage() {
         .eq("id", ur.id)
         .eq("firma_id", firmaId);
       if (d2.error) throw d2.error;
+      await aktiviteKaydet({
+        firmaId,
+        islem: "urun_silindi",
+        hedefTablo: "urunler",
+        hedefId: ur.id,
+        detay: { urun_adi: ur.urun_adi },
+      });
       toast("success", "Ürün silindi.");
       setRows((r) => r.filter((x) => x.id !== ur.id));
     } catch (e) {

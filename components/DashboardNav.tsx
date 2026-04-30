@@ -11,6 +11,7 @@ const links: { href: string; label: string }[] = [
   { href: "/dashboard/kategoriler", label: "Kategoriler" },
   { href: "/dashboard/musteriler", label: "Müşteriler" },
   { href: "/dashboard/ayarlar", label: "Ayarlar" },
+  { href: "/dashboard/aktivite", label: "📋 Aktivite Geçmişi" },
   { href: "/dashboard/cop-kutusu", label: "🗑️ Çöp Kutusu" },
 ];
 

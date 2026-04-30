@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { aktiviteKaydet } from "@/lib/aktivite-logu";
 import { sendPushNotification } from "@/lib/push-service";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
@@ -131,6 +132,13 @@ export default function SiparislerPage() {
         .select("id,durum")
         .maybeSingle();
       if (error) throw error;
+      await aktiviteKaydet({
+        firmaId,
+        islem: "siparis_durum_degisti",
+        hedefTablo: "siparisler",
+        hedefId: row.id,
+        detay: { eski_durum: row.durum, yeni_durum: durum },
+      });
 
       setRows((prev) =>
         prev.map((x) => (x.id === row.id ? { ...x, durum } : x)),

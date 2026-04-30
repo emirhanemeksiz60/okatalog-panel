@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
+import { aktiviteKaydet } from "@/lib/aktivite-logu";
 import { musteriSifreBcryptUret } from "@/lib/musteri-sifre";
 import { MUSTERI_LISTE_SUTUNLARI } from "@/lib/musteri-sutunlar";
 import {
@@ -475,6 +476,13 @@ export default function MusterilerPage() {
       setAd("");
       setSifre("");
       setYeniMusteriFiyatListesiId("");
+      await aktiviteKaydet({
+        firmaId,
+        islem: "musteri_eklendi",
+        hedefTablo: "musteriler",
+        hedefId: (data as Musteri).id,
+        detay: { musteri_adi: a, musteri_kodu: k },
+      });
       toast("success", "Müşteri eklendi.");
       void load();
     } catch (e) {
@@ -491,6 +499,13 @@ export default function MusterilerPage() {
         .eq("id", m.id)
         .eq("firma_id", firmaId);
       if (error) throw error;
+      await aktiviteKaydet({
+        firmaId,
+        islem: "musteri_silindi",
+        hedefTablo: "musteriler",
+        hedefId: m.id,
+        detay: { musteri_adi: m.musteri_adi },
+      });
       setRows((r) => r.filter((x) => x.id !== m.id));
       toast("success", "Silindi.");
       void load();

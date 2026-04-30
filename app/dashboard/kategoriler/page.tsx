@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { aktiviteKaydet } from "@/lib/aktivite-logu";
 import {
   type FirmaLimitBilgisi,
   limitIletisimMesaj,
@@ -129,6 +130,13 @@ export default function KategorilerPage() {
         ...prev,
         [k.id]: { ad: k.kategori_adi, ozel: k.ozel, aktif: k.aktif },
       }));
+      await aktiviteKaydet({
+        firmaId,
+        islem: "kategori_eklendi",
+        hedefTablo: "kategoriler",
+        hedefId: k.id,
+        detay: { kategori_adi: t },
+      });
       toast("success", "Kategori eklendi.");
       void load();
     } catch (e) {
@@ -187,6 +195,13 @@ export default function KategorilerPage() {
         .eq("id", k.id)
         .eq("firma_id", firmaId);
       if (error) throw error;
+      await aktiviteKaydet({
+        firmaId,
+        islem: "kategori_silindi",
+        hedefTablo: "kategoriler",
+        hedefId: k.id,
+        detay: { kategori_adi: k.kategori_adi },
+      });
       setList((L) => L.filter((x) => x.id !== k.id));
       setEdits((prev) => {
         const n = { ...prev };
