@@ -5,11 +5,6 @@ export async function sendPushNotification(
 ): Promise<void> {
   const t = token.trim();
   if (!t) return;
-  console.log("[push-service] /api/send-push request:", {
-    token: t,
-    title,
-    body,
-  });
 
   const res = await fetch("/api/send-push", {
     method: "POST",
@@ -23,10 +18,6 @@ export async function sendPushNotification(
     }),
   });
   const txt = await res.text();
-  console.log("[push-service] /api/send-push response:", {
-    status: res.status,
-    body: txt,
-  });
 
   if (!res.ok) {
     throw new Error(

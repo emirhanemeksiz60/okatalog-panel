@@ -1,7 +1,9 @@
-const BULUT_AD =
-  process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "do3sqiae8";
-const ONYUKLEME_PRESET =
-  process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET ?? "okatalog";
+const BULUT_AD = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+const ONYUKLEME_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+
+if (!BULUT_AD || !ONYUKLEME_PRESET) {
+  throw new Error("Cloudinary env eksik");
+}
 
 export type CloudinaryYukleSonucu = { secure_url: string };
 

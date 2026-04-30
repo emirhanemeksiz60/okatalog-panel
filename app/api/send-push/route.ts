@@ -16,12 +16,6 @@ export async function POST(req: Request) {
     const title = String(body?.title ?? "").trim();
     const mesaj = String(body?.body ?? "").trim();
 
-    console.log(
-      "[send-push] access token:",
-      process.env.EXPO_ACCESS_TOKEN ? "var" : "YOK",
-    );
-    console.log("[send-push] gönderilen token:", body.token);
-    console.log("[send-push] token length:", body.token?.length);
 
     if (!token || !title || !mesaj) {
       return NextResponse.json(
@@ -35,7 +29,6 @@ export async function POST(req: Request) {
       title,
       body: mesaj,
     };
-    console.log("[api/send-push] Expo request body:", expoRequestBody);
 
     const headers: Record<string, string> = {
       Accept: "application/json",
@@ -54,13 +47,7 @@ export async function POST(req: Request) {
       body: JSON.stringify([expoRequestBody]),
     });
 
-    console.log("[send-push] Expo response status:", expoResponse.status);
     const text = await expoResponse.text();
-    console.log("[send-push] Expo response body:", text);
-    console.log("[api/send-push] Expo response:", {
-      status: expoResponse.status,
-      body: text,
-    });
     let parsed: unknown = null;
     try {
       parsed = JSON.parse(text);

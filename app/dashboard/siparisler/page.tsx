@@ -112,12 +112,6 @@ export default function SiparislerPage() {
   async function durumDegistir(row: SiparisRow, durum: SiparisDurum) {
     if (!firmaId) return;
     setSavingId(row.id);
-    console.log("[siparisler] durumDegistir başla:", {
-      siparisId: row.id,
-      oncekiDurum: row.durum,
-      yeniDurum: durum,
-      musteri_id: row.musteri_id,
-    });
     try {
       const { data: updData, error } = await supabase
         .from("siparisler")
@@ -126,8 +120,6 @@ export default function SiparislerPage() {
         .eq("firma_id", firmaId)
         .select("id,durum")
         .maybeSingle();
-      console.log("[siparisler] siparis update response:", { data: updData, error });
-      console.log("[siparisler] supabase error:", JSON.stringify(error));
       if (error) throw error;
 
       setRows((prev) =>
@@ -140,35 +132,19 @@ export default function SiparislerPage() {
           .select("token")
           .eq("musteri_id", row.musteri_id)
           .maybeSingle();
-        console.log("[siparisler] push_tokens response:", { data, error: tErr });
         if (tErr) {
-          console.error("[siparisler] push_tokens sorgu hatası:", tErr.message);
           // Sipariş durumu güncellendi; token sorgu hatası push adımını bozmasın.
         }
 
         const token = (data as { token?: string } | null)?.token ?? null;
-        console.log("[siparisler] push token:", token);
         if (typeof token === "string" && token.trim()) {
           await sendPushNotification(token, "oKatalog", PUSH_METIN[durum]);
-          console.log("[siparisler] push gönderildi:", { durum, siparisId: row.id });
-        } else {
-          console.log("[siparisler] push atlandı (token yok):", { durum, siparisId: row.id });
         }
       }
 
-      console.log("[siparisler] durum güncelleme başarılı:", {
-        siparisId: row.id,
-        durum,
-      });
       toast("success", "Sipariş durumu güncellendi.");
     } catch (e) {
       const err = e as { message?: string; code?: string };
-      console.error(
-        "[siparisler] durum güncelleme hatası:",
-        JSON.stringify(e),
-        err?.message,
-        err?.code,
-      );
       toast("error", e instanceof Error ? e.message : "Durum güncellenemedi.");
     } finally {
       setSavingId(null);
