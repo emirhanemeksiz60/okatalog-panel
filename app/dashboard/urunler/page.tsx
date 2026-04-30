@@ -76,9 +76,14 @@ export default function UrunlerPage() {
       const d1 = await supabase
         .from("varyantlar")
         .delete()
-        .eq("urun_id", ur.id);
+        .eq("urun_id", ur.id)
+        .eq("firma_id", firmaId);
       if (d1.error) throw d1.error;
-      const d2 = await supabase.from("urunler").delete().eq("id", ur.id);
+      const d2 = await supabase
+        .from("urunler")
+        .delete()
+        .eq("id", ur.id)
+        .eq("firma_id", firmaId);
       if (d2.error) throw d2.error;
       toast("success", "Ürün silindi.");
       setRows((r) => r.filter((x) => x.id !== ur.id));

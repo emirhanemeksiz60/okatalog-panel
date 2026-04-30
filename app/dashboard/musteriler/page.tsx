@@ -474,7 +474,11 @@ export default function MusterilerPage() {
   async function sil(m: Musteri) {
     if (!window.confirm(`“${m.musteri_adi}” silinsin mi?`)) return;
     try {
-      const { error } = await supabase.from("musteriler").delete().eq("id", m.id);
+      const { error } = await supabase
+        .from("musteriler")
+        .delete()
+        .eq("id", m.id)
+        .eq("firma_id", firmaId);
       if (error) throw error;
       setRows((r) => r.filter((x) => x.id !== m.id));
       toast("success", "Silindi.");

@@ -144,7 +144,8 @@ export default function KategorilerPage() {
           ozel: ed.ozel,
           aktif: ed.aktif,
         })
-        .eq("id", k.id);
+        .eq("id", k.id)
+        .eq("firma_id", firmaId);
       if (error) throw error;
       setList((L) =>
         L.map((x) =>
@@ -168,7 +169,11 @@ export default function KategorilerPage() {
       return;
     }
     try {
-      const { error } = await supabase.from("kategoriler").delete().eq("id", k.id);
+      const { error } = await supabase
+        .from("kategoriler")
+        .delete()
+        .eq("id", k.id)
+        .eq("firma_id", firmaId);
       if (error) throw error;
       setList((L) => L.filter((x) => x.id !== k.id));
       setEdits((prev) => {
