@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 const EXPO_PUSH_SEND_URL = "https://exp.host/--/api/v2/push/send";
 
 type PushBody = {
+  firma_id?: string;
   token?: string;
   title?: string;
   body?: string;
@@ -11,12 +12,11 @@ type PushBody = {
 
 export async function POST(req: Request) {
   try {
-    const apiSecret = req.headers.get("x-api-secret");
-    if (apiSecret !== process.env.INTERNAL_API_SECRET) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const body = (await req.json()) as PushBody;
+    const firmaId = String(body?.firma_id ?? "").trim();
+    if (!firmaId) {
+      return Response.json({ error: "firma_id eksik" }, { status: 400 });
+    }
     const token = String(body?.token ?? "").trim();
     const title = String(body?.title ?? "").trim();
     const mesaj = String(body?.body ?? "").trim();
