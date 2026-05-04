@@ -1,11 +1,6 @@
 import type { NextConfig } from "next";
 
-/** İstemci modülünde admin doğrulaması için build anında enjekte edilir. */
 const nextConfig: NextConfig = {
-  env: {
-    ADMIN_USERNAME: process.env.ADMIN_USERNAME,
-    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD,
-  },
   images: {
     remotePatterns: [
       {

@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { signInWithFirma } from "@/lib/supabase-firma";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import type { AuthSession } from "@/lib/types";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -25,12 +25,22 @@ export default function LoginPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const res = await signInWithFirma(kod, sifre);
-      if (res.error || !res.data) {
-        toast("error", res.error ?? "Giriş yapılamadı.");
+      const res = await fetch("/api/firma-login", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ firma_kodu: kod, sifre }),
+      });
+      const j = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        session?: AuthSession;
+      };
+      if (!res.ok || !j.ok || !j.session) {
+        toast("error", j.error ?? "Giriş yapılamadı.");
         return;
       }
-      login(res.data);
+      login(j.session);
       toast("success", "Giriş başarılı.");
       router.push("/dashboard");
     } catch (err) {

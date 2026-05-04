@@ -2,11 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  adminGirisBeklenti,
-  getAdminFromStorage,
-  yeniAdminSession,
-} from "@/lib/admin-auth";
 import { useAdminAuth } from "@/context/admin-auth-context";
 import { useToast } from "@/context/toast-context";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -15,16 +10,15 @@ export default function AdminGirisPage() {
   const router = useRouter();
   const { session, ready, login } = useAdminAuth();
   const { show: toast } = useToast();
-  const [kadi, setKadi] = useState(() => process.env.ADMIN_USERNAME?.trim() ?? "");
+  const [kadi, setKadi] = useState("");
   const [sifre, setSifre] = useState("");
   const [g, setG] = useState(false);
 
   useEffect(() => {
-    if (ready && (session || getAdminFromStorage())) {
-      const s = session ?? getAdminFromStorage();
-      if (s) {
-        queueMicrotask(() => router.replace("/admin"));
-      }
+    if (ready && session) {
+      queueMicrotask(() => {
+        router.replace("/admin");
+      });
     }
   }, [ready, session, router]);
 
@@ -32,12 +26,28 @@ export default function AdminGirisPage() {
     e.preventDefault();
     setG(true);
     try {
-      if (!adminGirisBeklenti(kadi, sifre)) {
-        toast("error", "Kullanıcı adı veya şifre hatalı.");
+      const res = await fetch("/api/admin-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ username: kadi.trim(), password: sifre }),
+      });
+      const txt = await res.text();
+      let j: { ok?: boolean; kadi?: string; error?: string } = {};
+      try {
+        j = JSON.parse(txt) as typeof j;
+      } catch {
+        /* ignore */
+      }
+      if (!res.ok) {
+        toast("error", j.error === "Unauthorized" ? "Kullanıcı adı veya şifre hatalı." : "Giriş yapılamadı.");
         return;
       }
-      const s = yeniAdminSession();
-      login(s);
+      login({
+        kadi: typeof j.kadi === "string" ? j.kadi : kadi.trim() || "admin",
+        role: "super",
+        giris: new Date().toISOString(),
+      });
       toast("success", "Admin girişi başarılı.");
       router.push("/admin");
     } finally {
@@ -61,7 +71,7 @@ export default function AdminGirisPage() {
       <div className="w-full max-w-sm rounded-2xl border border-slate-800 bg-slate-900/90 p-8 shadow-xl">
         <h1 className="text-center text-xl font-bold text-white">Admin Girişi</h1>
         <p className="mb-6 text-center text-sm text-slate-400">oKatalog — süper yönetici</p>
-        <form onSubmit={gonder} className="space-y-4">
+        <form onSubmit={(e) => void gonder(e)} className="space-y-4">
           <div>
             <label
               className="mb-1.5 block text-sm text-slate-300"
@@ -75,6 +85,7 @@ export default function AdminGirisPage() {
               value={kadi}
               onChange={(e) => setKadi(e.target.value)}
               required
+              autoComplete="username"
             />
           </div>
           <div>
@@ -88,6 +99,7 @@ export default function AdminGirisPage() {
               value={sifre}
               onChange={(e) => setSifre(e.target.value)}
               required
+              autoComplete="current-password"
             />
           </div>
           <button

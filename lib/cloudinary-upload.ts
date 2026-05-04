@@ -6,6 +6,11 @@ type ApiJson = {
   error?: string;
 };
 
+type CldJson = {
+  secure_url?: string;
+  error?: { message?: string };
+};
+
 function readFileAsDataURL(dosya: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -13,6 +18,52 @@ function readFileAsDataURL(dosya: File): Promise<string> {
     r.onerror = () => reject(new Error("Dosya okunamadı."));
     r.readAsDataURL(dosya);
   });
+}
+
+/**
+ * Route handler / sunucu: base64 görseli Cloudinary'ye yükler, `secure_url` döner.
+ * Env yoksa veya Cloudinary hata dönerse `Error` fırlatır.
+ */
+export async function cloudinarySunucuBase64Yukle(
+  imageBase64: string,
+): Promise<string> {
+  const BULUT_AD = process.env.CLOUDINARY_CLOUD_NAME?.trim();
+  const ONYUKLEME_PRESET = process.env.CLOUDINARY_UPLOAD_PRESET?.trim();
+
+  if (!BULUT_AD || !ONYUKLEME_PRESET) {
+    throw new Error("Cloudinary env değişkenleri eksik");
+  }
+
+  const raw = String(imageBase64 ?? "").trim();
+  if (!raw) {
+    throw new Error("imageBase64 zorunlu.");
+  }
+
+  const fileField = raw.startsWith("data:")
+    ? raw
+    : `data:image/png;base64,${raw}`;
+
+  const form = new FormData();
+  form.append("file", fileField);
+  form.append("upload_preset", ONYUKLEME_PRESET);
+
+  const url = `https://api.cloudinary.com/v1_1/${BULUT_AD}/image/upload`;
+  const res = await fetch(url, { method: "POST", body: form });
+  const data = (await res.json().catch(() => ({}))) as CldJson;
+
+  if (!res.ok) {
+    throw new Error(
+      data.error?.message ||
+        `Cloudinary hata: ${res.status} ${res.statusText}`,
+    );
+  }
+  if (data.error?.message) {
+    throw new Error(data.error.message);
+  }
+  if (!data.secure_url) {
+    throw new Error("Yanıtta secure_url yok.");
+  }
+  return data.secure_url;
 }
 
 /**

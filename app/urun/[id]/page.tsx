@@ -74,7 +74,7 @@ export default function UrunDetayKatalogPage() {
       const { data: kat, error: kE } = await supabase
         .from("kategoriler")
         .select("kategori_adi")
-        .eq("id", u.kategori_id)
+        .eq("id", urunRest.kategori_id)
         .maybeSingle();
       if (kE) {
         setKategoriAd(null);

@@ -2,17 +2,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { AuthSession } from "@/lib/types";
-import {
-  clearFirmSession,
-  getFirmSessionFromStorage,
-  setFirmSessionInStorage,
-} from "@/lib/firma-storage";
+import { clearFirmSession } from "@/lib/firma-storage";
 
 type AuthContextValue = {
   session: AuthSession | null;
   ready: boolean;
   login: (s: AuthSession) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -22,19 +18,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const s = getFirmSessionFromStorage();
-    queueMicrotask(() => {
-      setSession(s);
-      setReady(true);
-    });
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/firma-me", { credentials: "include" });
+        if (cancelled) return;
+        if (r.ok) {
+          const j = (await r.json()) as { ok?: boolean; session?: AuthSession };
+          if (j.ok && j.session) {
+            setSession(j.session);
+          } else {
+            clearFirmSession();
+            setSession(null);
+          }
+        } else {
+          clearFirmSession();
+          setSession(null);
+        }
+      } catch {
+        if (!cancelled) {
+          clearFirmSession();
+          setSession(null);
+        }
+      } finally {
+        if (!cancelled) setReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const login = useCallback((s: AuthSession) => {
-    setFirmSessionInStorage(s);
+    clearFirmSession();
     setSession(s);
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    try {
+      await fetch("/api/firma-logout", { method: "POST", credentials: "include" });
+    } catch {
+      /* ignore */
+    }
     clearFirmSession();
     setSession(null);
   }, []);

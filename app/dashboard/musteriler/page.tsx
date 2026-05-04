@@ -491,6 +491,7 @@ export default function MusterilerPage() {
   }
 
   async function sil(m: Musteri) {
+    if (!firmaId) return;
     if (!window.confirm(`“${m.musteri_adi}” silinsin mi?`)) return;
     try {
       const { error } = await supabase

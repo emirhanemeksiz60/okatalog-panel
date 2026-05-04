@@ -1,4 +1,7 @@
-const ADMIN_KEY = "okatalog_superadmin_session";
+/**
+ * Admin panel istemci oturumu (UI): cookie tabanlı doğrulama sunucuda yapılır.
+ * Sunucu / middleware: `@/lib/admin-session` → `isAdminAuthenticated`, `verifyAdminSessionToken`.
+ */
 
 export type AdminSession = {
   kadi: string;
@@ -6,38 +9,14 @@ export type AdminSession = {
   giris: string;
 };
 
-if (!process.env.ADMIN_USERNAME?.trim() || !process.env.ADMIN_PASSWORD) {
-  throw new Error(
-    "ADMIN_USERNAME ve ADMIN_PASSWORD env degiskenleri tanimli olmali",
-  );
-}
+const ADMIN_KEY = "okatalog_superadmin_session";
 
-const ADMIN_KADI = process.env.ADMIN_USERNAME.trim();
-const ADMIN_PAROLA = process.env.ADMIN_PASSWORD;
-
-export function adminGirisBeklenti(kadi: string, sifre: string): boolean {
-  return kadi.trim() === ADMIN_KADI && sifre === ADMIN_PAROLA;
-}
-
-export function getAdminFromStorage(): AdminSession | null {
-  if (typeof window === "undefined") return null;
+/** Eski localStorage tabanlı admin oturumunu temizler. */
+export function clearLegacyAdminLocalStorage(): void {
+  if (typeof window === "undefined") return;
   try {
-    const raw = localStorage.getItem(ADMIN_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as AdminSession;
+    localStorage.removeItem(ADMIN_KEY);
   } catch {
-    return null;
+    /* ignore */
   }
-}
-
-export function setAdminInStorage(s: AdminSession) {
-  localStorage.setItem(ADMIN_KEY, JSON.stringify(s));
-}
-
-export function clearAdmin() {
-  localStorage.removeItem(ADMIN_KEY);
-}
-
-export function yeniAdminSession(): AdminSession {
-  return { kadi: ADMIN_KADI, role: "super", giris: new Date().toISOString() };
 }

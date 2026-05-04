@@ -197,6 +197,7 @@ export default function KategorilerPage() {
       toast("error", "Otomatik filtre kategorileri silinemez.");
       return;
     }
+    if (!firmaId) return;
     if (!window.confirm(`“${k.kategori_adi}” kategorisini silmek istiyor musunuz?`)) {
       return;
     }

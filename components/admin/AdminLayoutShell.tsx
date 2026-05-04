@@ -48,8 +48,10 @@ export function AdminLayoutShell({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             onClick={() => {
-              logout();
-              router.replace("/admin/giris");
+              void (async () => {
+                await logout();
+                router.replace("/admin/giris");
+              })();
             }}
             className="rounded-lg border border-slate-600 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
           >

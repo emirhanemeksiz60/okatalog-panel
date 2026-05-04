@@ -8,37 +8,61 @@ import {
   useState,
 } from "react";
 import type { AdminSession } from "@/lib/admin-auth";
-import { clearAdmin, getAdminFromStorage, setAdminInStorage } from "@/lib/admin-auth";
+import { clearLegacyAdminLocalStorage } from "@/lib/admin-auth";
 
 type Ctx = {
   session: AdminSession | null;
   ready: boolean;
   login: (s: AdminSession) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
 };
 
 const AdminAuthContext = createContext<Ctx | null>(null);
+
+async function fetchAdminMe(): Promise<AdminSession | null> {
+  const res = await fetch("/api/admin-me", { credentials: "include" });
+  if (!res.ok) return null;
+  const j = (await res.json()) as { ok?: boolean; kadi?: string };
+  if (!j.ok) return null;
+  return {
+    kadi: typeof j.kadi === "string" ? j.kadi : "admin",
+    role: "super",
+    giris: new Date().toISOString(),
+  };
+}
 
 export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<AdminSession | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const s = getAdminFromStorage();
-    queueMicrotask(() => {
-      setSession(s);
-      setReady(true);
-    });
+    clearLegacyAdminLocalStorage();
+    let cancelled = false;
+    void (async () => {
+      try {
+        const s = await fetchAdminMe();
+        if (!cancelled) setSession(s);
+      } catch {
+        if (!cancelled) setSession(null);
+      } finally {
+        if (!cancelled) setReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const login = useCallback((s: AdminSession) => {
-    setAdminInStorage(s);
     setSession(s);
   }, []);
 
-  const logout = useCallback(() => {
-    clearAdmin();
-    setSession(null);
+  const logout = useCallback(async () => {
+    try {
+      await fetch("/api/admin-logout", { method: "POST", credentials: "include" });
+    } finally {
+      setSession(null);
+    }
   }, []);
 
   return (

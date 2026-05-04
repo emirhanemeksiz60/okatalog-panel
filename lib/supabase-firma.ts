@@ -1,6 +1,6 @@
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 import { aktifPaketKoduCoz } from "@/lib/admin-paketler";
-import type { AuthSession, Firma } from "@/lib/types";
+import type { Firma } from "@/lib/types";
 
 /** `firmalar` — yalnız mevcut sütunlar (Supabase şema ile aynı) */
 export const FIRMA_SUTUN_SECIM = [
@@ -49,38 +49,18 @@ export function firmaCoz(raw: unknown): Firma {
 }
 
 /**
- * Giriş: `verify_firma_password` RPC (bcrypt, `panel_sifre` sütunu), sonra `firmalar` satırı.
+ * Yalnız Route Handler / sunucu. `SUPABASE_SERVICE_ROLE_KEY` gerekir.
+ * İstemci tarafında çağırma.
  */
-export async function signInWithFirma(
-  firmaKodu: string,
-  sifre: string,
-): Promise<{ data: AuthSession; error: null } | { data: null; error: string }> {
-  const { data: firmaId, error: rpcHata } = await supabase.rpc(
-    "verify_firma_password",
-    { p_firma_kodu: firmaKodu.trim(), p_sifre: sifre },
-  );
-  if (rpcHata) {
-    return { data: null, error: rpcHata.message };
+export function createFirmaServiceRoleClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    throw new Error(
+      "NEXT_PUBLIC_SUPABASE_URL veya SUPABASE_SERVICE_ROLE_KEY tanımlı değil.",
+    );
   }
-  if (firmaId == null || firmaId === "") {
-    return { data: null, error: "Firma kodu veya şifre hatalı" };
-  }
-  const { data, error } = await supabase
-    .from("firmalar")
-    .select(FIRMA_SUTUN_SECIM)
-    .eq("id", firmaId as string)
-    .maybeSingle();
-  if (error) {
-    return { data: null, error: error.message };
-  }
-  if (!data) {
-    return { data: null, error: "Firma kodu veya şifre hatalı" };
-  }
-  return {
-    data: {
-      firma: firmaCoz(data),
-      loggedInAt: new Date().toISOString(),
-    },
-    error: null,
-  };
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 }

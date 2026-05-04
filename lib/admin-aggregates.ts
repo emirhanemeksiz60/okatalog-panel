@@ -1,6 +1,26 @@
 import { supabase } from "@/lib/supabase";
 import { toplamFotografGorselUrl } from "@/lib/admin-istatistik";
 
+/** `get_firma_istatistik` RPC yanıtı */
+type FirmaIstatistikJson = {
+  urun_sayisi: number;
+  musteri_sayisi: number;
+  kategori_sayisi: number;
+  varyant_sayisi: number;
+  fotograf_toplam: number;
+};
+
+function parseFirmaIstatistik(data: unknown): FirmaIstatistikJson {
+  const o = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  return {
+    urun_sayisi: Number(o.urun_sayisi ?? 0),
+    musteri_sayisi: Number(o.musteri_sayisi ?? 0),
+    kategori_sayisi: Number(o.kategori_sayisi ?? 0),
+    varyant_sayisi: Number(o.varyant_sayisi ?? 0),
+    fotograf_toplam: Number(o.fotograf_toplam ?? 0),
+  };
+}
+
 export type FirmaSatirIstat = {
   firma_id: string;
   urun: number;
@@ -50,41 +70,25 @@ export async function firmaBasiIstatikler(
   }
   if (firmaIdler.length === 0) return m;
 
-  const { data: urunler, error: eu } = await supabase
-    .from("urunler")
-    .select("id, firma_id");
-  if (eu) throw eu;
-  const { data: musteriler, error: em } = await supabase
-    .from("musteriler")
-    .select("firma_id");
-  if (em) throw em;
-  const { data: varray, error: ev } = await supabase
-    .from("varyantlar")
-    .select("urun_id, gorsel_url");
-  if (ev) throw ev;
+  const sonuclar = await Promise.all(
+    firmaIdler.map(async (fid) => {
+      const { data, error } = await supabase.rpc("get_firma_istatistik", {
+        p_firma_id: fid,
+      });
+      if (error) throw error;
+      return { fid, stats: parseFirmaIstatistik(data) };
+    }),
+  );
 
-  const urows = (urunler as { id: string; firma_id: string }[]) ?? [];
-  const urunToFirma = new Map(urows.map((u) => [u.id, u.firma_id] as const));
-  (musteriler as { firma_id: string }[])?.forEach((row) => {
-    if (!m.has(row.firma_id)) return;
-    const x = m.get(row.firma_id)!;
-    m.set(row.firma_id, { ...x, musteri: x.musteri + 1 });
-  });
-  urows.forEach((r) => {
-    if (!m.has(r.firma_id)) return;
-    const x = m.get(r.firma_id)!;
-    m.set(r.firma_id, { ...x, urun: x.urun + 1 });
-  });
-  (varray as { urun_id: string; gorsel_url: string | null }[])?.forEach((r) => {
-    const fd = urunToFirma.get(r.urun_id);
-    if (fd == null) return;
-    if (!m.has(fd)) return;
-    const x = m.get(fd)!;
-    m.set(fd, {
-      ...x,
-      fotograf: x.fotograf + toplamFotografGorselUrl(r.gorsel_url),
+  for (const { fid, stats } of sonuclar) {
+    if (!m.has(fid)) continue;
+    m.set(fid, {
+      firma_id: fid,
+      urun: stats.urun_sayisi,
+      musteri: stats.musteri_sayisi,
+      fotograf: stats.fotograf_toplam,
     });
-  });
+  }
   return m;
 }
 

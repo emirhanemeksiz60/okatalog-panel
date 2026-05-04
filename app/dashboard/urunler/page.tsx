@@ -57,7 +57,7 @@ export default function UrunlerPage() {
       type UrunSatir = Urun & {
         kategoriler?: Pick<Kategori, "id" | "kategori_adi"> | null;
       };
-      const satirlar = (uRes.data as UrunSatir[]) ?? [];
+      const satirlar = (uRes.data as unknown as UrunSatir[]) ?? [];
       const m: Record<string, string> = {};
       satirlar.forEach((row) => {
         const kat = row.kategoriler;
@@ -86,6 +86,7 @@ export default function UrunlerPage() {
   }, [ready, firmaId, load]);
 
   async function remove(ur: Urun) {
+    if (!firmaId) return;
     if (
       !window.confirm(
         `“${ur.urun_adi}” ürünü silinecek. Emin misiniz?`,
