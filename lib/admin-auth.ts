@@ -1,18 +1,22 @@
 const ADMIN_KEY = "okatalog_superadmin_session";
 
 export type AdminSession = {
-  kadi: "admin";
+  kadi: string;
   role: "super";
   giris: string;
 };
 
-const ADMIN_KADI = "admin";
-const SUPER_PAROLA = "superadmin123";
+if (!process.env.ADMIN_USERNAME?.trim() || !process.env.ADMIN_PASSWORD) {
+  throw new Error(
+    "ADMIN_USERNAME ve ADMIN_PASSWORD env degiskenleri tanimli olmali",
+  );
+}
+
+const ADMIN_KADI = process.env.ADMIN_USERNAME.trim();
+const ADMIN_PAROLA = process.env.ADMIN_PASSWORD;
 
 export function adminGirisBeklenti(kadi: string, sifre: string): boolean {
-  return (
-    kadi.trim() === ADMIN_KADI && sifre === SUPER_PAROLA
-  );
+  return kadi.trim() === ADMIN_KADI && sifre === ADMIN_PAROLA;
 }
 
 export function getAdminFromStorage(): AdminSession | null {
@@ -35,5 +39,5 @@ export function clearAdmin() {
 }
 
 export function yeniAdminSession(): AdminSession {
-  return { kadi: "admin", role: "super", giris: new Date().toISOString() };
+  return { kadi: ADMIN_KADI, role: "super", giris: new Date().toISOString() };
 }

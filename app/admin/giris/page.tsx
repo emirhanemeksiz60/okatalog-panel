@@ -15,7 +15,7 @@ export default function AdminGirisPage() {
   const router = useRouter();
   const { session, ready, login } = useAdminAuth();
   const { show: toast } = useToast();
-  const [kadi, setKadi] = useState("admin");
+  const [kadi, setKadi] = useState(() => process.env.ADMIN_USERNAME?.trim() ?? "");
   const [sifre, setSifre] = useState("");
   const [g, setG] = useState(false);
 
