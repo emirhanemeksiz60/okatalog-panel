@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { getFirmaSessionIdFromRequest } from "@/lib/firma-session";
 
 /** Expo Push Service HTTP API — doğru path: /--/api/v2/push/send (/--/push/v2/send 404 döner). */
 const EXPO_PUSH_SEND_URL = "https://exp.host/--/api/v2/push/send";
@@ -10,16 +12,24 @@ type PushBody = {
   body?: string;
 };
 
-export async function POST(req: Request) {
+export async function POST(request: NextRequest) {
+  const firmaId = getFirmaSessionIdFromRequest(request);
+  if (!firmaId) {
+    return NextResponse.json({ error: "Yetkisiz" }, { status: 401 });
+  }
+
   try {
-    const body = (await req.json()) as PushBody;
-    const firmaId = String(body?.firma_id ?? "").trim();
-    if (!firmaId) {
-      return Response.json({ error: "firma_id eksik" }, { status: 400 });
+    const body = (await request.json()) as PushBody;
+    const bodyFirmaId = String(body?.firma_id ?? "").trim();
+    if (!bodyFirmaId) {
+      return NextResponse.json({ error: "firma_id eksik" }, { status: 400 });
     }
-    const token = String(body?.token ?? "").trim();
-    const title = String(body?.title ?? "").trim();
-    const mesaj = String(body?.body ?? "").trim();
+    if (bodyFirmaId !== firmaId) {
+      return NextResponse.json({ error: "Yetkisiz" }, { status: 403 });
+    }
+    const token = String(body.token ?? "").trim();
+    const title = String(body.title ?? "").trim();
+    const mesaj = String(body.body ?? "").trim();
 
 
     if (!token || !title || !mesaj) {

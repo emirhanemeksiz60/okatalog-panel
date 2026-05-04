@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { getFirmaSessionIdFromRequest } from "@/lib/firma-session";
 
 export const runtime = "nodejs";
 
@@ -16,7 +18,12 @@ function stripDataUrlBase64(s: string): string {
   return m ? m[1]! : s.trim();
 }
 
-export async function POST(req: Request) {
+export async function POST(request: NextRequest) {
+  const firmaId = getFirmaSessionIdFromRequest(request);
+  if (!firmaId) {
+    return NextResponse.json({ error: "Yetkisiz" }, { status: 401 });
+  }
+
   try {
     const apiKey = process.env.REMOVE_BG_API_KEY?.trim();
     if (!apiKey) {
@@ -28,7 +35,7 @@ export async function POST(req: Request) {
 
     let body: Body;
     try {
-      body = (await req.json()) as Body;
+      body = (await request.json()) as Body;
     } catch {
       return NextResponse.json(
         { success: false, error: "Geçersiz JSON body." },
