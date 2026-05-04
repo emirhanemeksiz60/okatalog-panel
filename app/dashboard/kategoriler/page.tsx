@@ -41,14 +41,14 @@ export default function KategorilerPage() {
       const [katRes, katCountRes, lim] = await Promise.all([
         supabase
           .from("kategoriler")
-          .select("*")
+          .select("id, kategori_adi, sira, aktif, ozel, created_at")
           .eq("firma_id", firmaId)
           .is("deleted_at", null)
           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
           .order("sira", { ascending: true }),
         supabase
           .from("kategoriler")
-          .select("*", { count: "exact", head: true })
+          .select("id", { count: "exact", head: true })
           .eq("firma_id", firmaId)
           .is("deleted_at", null),
         yukleFirmaLimitBilgisi(firmaId),
@@ -57,7 +57,12 @@ export default function KategorilerPage() {
       setLimitB(lim);
       setTotalCount(katCountRes.count ?? 0);
       const data = katRes.data;
-      const next = sortKategoriler((data as Kategori[]) ?? []);
+      const next = sortKategoriler(
+        ((data as Omit<Kategori, "firma_id">[]) ?? []).map((k) => ({
+          ...k,
+          firma_id: firmaId!,
+        })) as Kategori[],
+      );
       setList(next);
       const e: Record<string, { ad: string; ozel: boolean; aktif: boolean }> = {};
       next.forEach((k) => {

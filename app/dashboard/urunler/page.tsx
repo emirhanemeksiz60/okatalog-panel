@@ -36,33 +36,40 @@ export default function UrunlerPage() {
     if (!firmaId) return;
     setLoading(true);
     try {
-      const [kRes, uRes, uCountRes] = await Promise.all([
-        supabase
-          .from("kategoriler")
-          .select("id, kategori_adi")
-          .eq("firma_id", firmaId),
+      const [uRes, uCountRes] = await Promise.all([
         supabase
           .from("urunler")
-          .select("*")
+          .select(
+            "id, urun_kodu, urun_adi, fiyat, para_birimi, aktif, barkod, kategori_id, created_at, yeni_mi, guncelleme, kategoriler(id, kategori_adi)",
+          )
           .eq("firma_id", firmaId)
           .is("deleted_at", null)
           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
           .order("urun_kodu", { ascending: true }),
         supabase
           .from("urunler")
-          .select("*", { count: "exact", head: true })
+          .select("id", { count: "exact", head: true })
           .eq("firma_id", firmaId)
           .is("deleted_at", null)
           .order("urun_kodu", { ascending: true }),
       ]);
-      if (kRes.error) throw kRes.error;
       if (uRes.error) throw uRes.error;
+      type UrunSatir = Urun & {
+        kategoriler?: Pick<Kategori, "id" | "kategori_adi"> | null;
+      };
+      const satirlar = (uRes.data as UrunSatir[]) ?? [];
       const m: Record<string, string> = {};
-      (kRes.data as Pick<Kategori, "id" | "kategori_adi">[]).forEach((k) => {
-        m[k.id] = k.kategori_adi;
+      satirlar.forEach((row) => {
+        const kat = row.kategoriler;
+        if (kat?.kategori_adi) m[row.kategori_id] = kat.kategori_adi;
       });
       setKatById(m);
-      setRows((uRes.data as Urun[]) ?? []);
+      setRows(
+        satirlar.map((row) => {
+          const { kategoriler: _k, ...u } = row;
+          return { ...u, firma_id: firmaId! } as Urun;
+        }),
+      );
       setTotalCount(uCountRes.count ?? 0);
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "Ürünler yüklenemedi.");

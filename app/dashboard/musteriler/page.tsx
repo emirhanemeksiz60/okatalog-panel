@@ -108,7 +108,7 @@ export default function MusterilerPage() {
           .order("musteri_kodu", { ascending: true }),
         supabase
           .from("musteriler")
-          .select("*", { count: "exact", head: true })
+          .select("id", { count: "exact", head: true })
           .eq("firma_id", firmaId)
           .is("deleted_at", null),
         yukleFirmaLimitBilgisi(firmaId),

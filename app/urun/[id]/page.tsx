@@ -46,23 +46,29 @@ export default function UrunDetayKatalogPage() {
     setLoading(true);
     setHata(null);
     try {
-      const uRes = await supabase.from("urunler").select("*").eq("id", id).maybeSingle();
+      const uRes = await supabase
+        .from("urunler")
+        .select(
+          "id, urun_kodu, urun_adi, detay, fiyat, para_birimi, aktif, yeni_mi, guncelleme, kategori_id, varyantlar(id, renk_adi, renk_hex, gorsel_url, stok_durumu, stok_miktar, stok_birimi, min_siparis)",
+        )
+        .eq("id", id)
+        .maybeSingle();
       if (uRes.error) throw uRes.error;
-      const u = uRes.data as Urun | null;
-      if (!u || !u.aktif) {
+      type UrunVaryantRow = Urun & { varyantlar?: Varyant[] | null };
+      const raw = uRes.data as UrunVaryantRow | null;
+      if (!raw || !raw.aktif) {
         setUrun(null);
         setVaryantlar([]);
         setKategoriAd(null);
         return;
       }
-      setUrun(u);
-      const vRes = await supabase
-        .from("varyantlar")
-        .select("*")
-        .eq("urun_id", u.id)
-        .order("id", { ascending: true });
-      if (vRes.error) throw vRes.error;
-      const v = (vRes.data as Varyant[]) ?? [];
+      const { varyantlar: vrows, ...urunRest } = raw;
+      setUrun({
+        ...urunRest,
+        firma_id: urunRest.firma_id ?? "",
+        detay: urunRest.detay ?? null,
+      } as Urun);
+      const v = [...(vrows ?? [])].sort((a, b) => a.id.localeCompare(b.id));
       setVaryantlar(v);
       setSecim(0);
       const { data: kat, error: kE } = await supabase

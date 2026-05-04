@@ -22,6 +22,7 @@ type SiparisRow = {
   id: string;
   firma_id: string;
   musteri_id: string | null;
+  musteri_adi: string | null;
   durum: SiparisDurum | string;
   created_at: string | null;
   toplam_urun_adedi: number;
@@ -44,6 +45,8 @@ const PUSH_METIN: Record<string, string> = {
 };
 
 function toplamAdet(raw: Record<string, unknown>): number {
+  const n0 = Number(raw.toplam_urun ?? 0);
+  if (Number.isFinite(n0) && n0 > 0) return n0;
   const n1 = Number(raw.toplam_urun_adedi ?? 0);
   if (Number.isFinite(n1) && n1 > 0) return n1;
   const n2 = Number(raw.toplam_adet ?? 0);
@@ -58,7 +61,6 @@ export default function SiparislerPage() {
   const { show: toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<SiparisRow[]>([]);
-  const [musteriById, setMusteriById] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
@@ -68,41 +70,35 @@ export default function SiparislerPage() {
     if (!firmaId) return;
     setLoading(true);
     try {
-      const [sRes, sCountRes, mRes] = await Promise.all([
+      const [sRes, sCountRes] = await Promise.all([
         supabase
           .from("siparisler")
-          .select("*")
+          .select(
+            "id, firma_id, durum, created_at, updated_at, notlar, esnaf_notu, kargo_notu, toplam_urun, musteri_id, musteriler(id, musteri_adi, musteri_kodu)",
+          )
           .eq("firma_id", firmaId)
           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
           .order("created_at", { ascending: false }),
         supabase
           .from("siparisler")
-          .select("*", { count: "exact", head: true })
-          .eq("firma_id", firmaId),
-        supabase
-          .from("musteriler")
-          .select("id,musteri_adi")
+          .select("id", { count: "exact", head: true })
           .eq("firma_id", firmaId),
       ]);
       if (sRes.error) throw sRes.error;
-      if (mRes.error) throw mRes.error;
       setTotalCount(sCountRes.count ?? 0);
-      const musteriMap: Record<string, string> = {};
-      ((mRes.data as Record<string, unknown>[]) ?? []).forEach((m) => {
-        const id = String(m.id ?? "");
-        if (!id) return;
-        musteriMap[id] = String(m.musteri_adi ?? "Müşteri");
-      });
-      setMusteriById(musteriMap);
 
-      const siparisler = ((sRes.data as Record<string, unknown>[]) ?? []).map((r) => ({
-        id: String(r.id ?? ""),
-        firma_id: String(r.firma_id ?? ""),
-        musteri_id: r.musteri_id ? String(r.musteri_id) : null,
-        durum: String(r.durum ?? "istek"),
-        created_at: r.created_at ? String(r.created_at) : null,
-        toplam_urun_adedi: toplamAdet(r),
-      }));
+      const siparisler = ((sRes.data as Record<string, unknown>[]) ?? []).map((r) => {
+        const m = r.musteriler as { musteri_adi?: string } | null | undefined;
+        return {
+          id: String(r.id ?? ""),
+          firma_id: String(r.firma_id ?? firmaId),
+          musteri_id: r.musteri_id ? String(r.musteri_id) : null,
+          musteri_adi: m?.musteri_adi ? String(m.musteri_adi) : null,
+          durum: String(r.durum ?? "istek"),
+          created_at: r.created_at ? String(r.created_at) : null,
+          toplam_urun_adedi: toplamAdet(r),
+        };
+      });
       setRows(siparisler);
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "Siparişler yüklenemedi.");
@@ -200,7 +196,7 @@ export default function SiparislerPage() {
             {sortedRows.map((r) => (
               <tr key={r.id} className="border-t border-slate-100">
                 <td className="px-4 py-3">
-                  {r.musteri_id ? musteriById[r.musteri_id] ?? "Bilinmeyen müşteri" : "—"}
+                  {r.musteri_id ? r.musteri_adi ?? "Bilinmeyen müşteri" : "—"}
                 </td>
                 <td className="px-4 py-3 text-slate-600">
                   {r.created_at
