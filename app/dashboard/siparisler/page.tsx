@@ -120,46 +120,49 @@ export default function SiparislerPage() {
     if (!firmaId) return;
     setSavingId(row.id);
     try {
-      const { data: updData, error } = await supabase
-        .from("siparisler")
-        .update({ durum })
-        .eq("id", row.id)
-        .eq("firma_id", firmaId)
-        .select("id,durum")
-        .maybeSingle();
-      if (error) throw error;
-      await aktiviteKaydet({
-        firmaId,
-        islem: "siparis_durum_degisti",
-        hedefTablo: "siparisler",
-        hedefId: row.id,
-        detay: { eski_durum: row.durum, yeni_durum: durum },
-      });
+      try {
+        const { error } = await supabase
+          .from("siparisler")
+          .update({ durum })
+          .eq("id", row.id)
+          .eq("firma_id", firmaId)
+          .select("id,durum")
+          .maybeSingle();
+        if (error) throw error;
+        await aktiviteKaydet({
+          firmaId,
+          islem: "siparis_durum_degisti",
+          hedefTablo: "siparisler",
+          hedefId: row.id,
+          detay: { eski_durum: row.durum, yeni_durum: durum },
+        });
+      } catch {
+        toast("error", "Sipariş güncellenemedi.");
+        return;
+      }
 
       setRows((prev) =>
         prev.map((x) => (x.id === row.id ? { ...x, durum } : x)),
       );
+      toast("success", "Sipariş güncellendi.");
 
       if (row.musteri_id && PUSH_METIN[durum]) {
-        const { data, error: tErr } = await supabase
-          .from("push_tokens")
-          .select("token")
-          .eq("musteri_id", row.musteri_id)
-          .maybeSingle();
-        if (tErr) {
-          // Sipariş durumu güncellendi; token sorgu hatası push adımını bozmasın.
-        }
+        try {
+          const { data, error: tErr } = await supabase
+            .from("push_tokens")
+            .select("token")
+            .eq("musteri_id", row.musteri_id)
+            .maybeSingle();
+          if (tErr) throw tErr;
 
-        const token = (data as { token?: string } | null)?.token ?? null;
-        if (typeof token === "string" && token.trim()) {
-          await sendPushNotification(firmaId, token, "oKatalog", PUSH_METIN[durum]);
+          const token = (data as { token?: string } | null)?.token ?? null;
+          if (typeof token === "string" && token.trim()) {
+            await sendPushNotification(firmaId, token, "oKatalog", PUSH_METIN[durum]);
+          }
+        } catch (e) {
+          console.warn("Push gönderilemedi:", e);
         }
       }
-
-      toast("success", "Sipariş durumu güncellendi.");
-    } catch (e) {
-      const err = e as { message?: string; code?: string };
-      toast("error", e instanceof Error ? e.message : "Durum güncellenemedi.");
     } finally {
       setSavingId(null);
     }
