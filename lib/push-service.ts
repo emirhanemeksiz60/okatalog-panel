@@ -1,10 +1,12 @@
 export async function sendPushNotification(
+  firmaId: string,
   token: string,
   title: string,
   body: string,
 ): Promise<void> {
+  const f = firmaId.trim();
   const t = token.trim();
-  if (!t) return;
+  if (!f || !t) return;
 
   const res = await fetch("/api/send-push", {
     method: "POST",
@@ -12,6 +14,7 @@ export async function sendPushNotification(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
+      firma_id: f,
       token: t,
       title,
       body,

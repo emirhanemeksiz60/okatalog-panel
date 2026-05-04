@@ -156,7 +156,7 @@ export default function SiparislerPage() {
 
         const token = (data as { token?: string } | null)?.token ?? null;
         if (typeof token === "string" && token.trim()) {
-          await sendPushNotification(token, "oKatalog", PUSH_METIN[durum]);
+          await sendPushNotification(firmaId, token, "oKatalog", PUSH_METIN[durum]);
         }
       }
 

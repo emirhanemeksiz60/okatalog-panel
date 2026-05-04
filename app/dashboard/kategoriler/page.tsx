@@ -108,9 +108,16 @@ export default function KategorilerPage() {
       return;
     }
     try {
-      const nextSira = list.length
-        ? Math.max(...list.map((k) => k.sira)) + 1
-        : 1;
+      const { data: maxSiraData, error: maxSiraError } = await supabase
+        .from("kategoriler")
+        .select("sira")
+        .eq("firma_id", firmaId)
+        .is("deleted_at", null)
+        .order("sira", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (maxSiraError) throw maxSiraError;
+      const nextSira = Number((maxSiraData as { sira?: number } | null)?.sira ?? 0) + 1;
       const { data, error } = await supabase
         .from("kategoriler")
         .insert({
@@ -228,12 +235,14 @@ export default function KategorilerPage() {
       const { error: e1 } = await supabase
         .from("kategoriler")
         .update({ sira: b.sira })
-        .eq("id", a.id);
+        .eq("id", a.id)
+        .eq("firma_id", firmaId);
       if (e1) throw e1;
       const { error: e2 } = await supabase
         .from("kategoriler")
         .update({ sira: a.sira })
-        .eq("id", b.id);
+        .eq("id", b.id)
+        .eq("firma_id", firmaId);
       if (e2) throw e2;
       setList(
         sortKategoriler(
