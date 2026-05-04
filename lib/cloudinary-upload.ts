@@ -1,39 +1,48 @@
-const BULUT_AD = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-const ONYUKLEME_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
-
-if (!BULUT_AD || !ONYUKLEME_PRESET) {
-  throw new Error("Cloudinary env eksik");
-}
-
 export type CloudinaryYukleSonucu = { secure_url: string };
 
-type CldJson = { secure_url?: string; error?: { message?: string } };
+type ApiJson = {
+  success?: boolean;
+  url?: string;
+  error?: string;
+};
+
+function readFileAsDataURL(dosya: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(new Error("Dosya okunamadı."));
+    r.readAsDataURL(dosya);
+  });
+}
 
 /**
- * Unsigned (upload_preset) resim yükler; next-cloudinary kullanmaz.
+ * Sunucu route `/api/cloudinary-upload` üzerinden yükler (Cloudinary anahtarları yalnız sunucuda).
  * @see https://cloudinary.com/documentation/image_upload_api_reference
  */
 export async function cloudinaryGorselYukle(
   dosya: File,
 ): Promise<CloudinaryYukleSonucu> {
-  const form = new FormData();
-  form.append("file", dosya);
-  form.append("upload_preset", ONYUKLEME_PRESET);
-  const res = await fetch(
-    `https://api.cloudinary.com/v1_1/${BULUT_AD}/image/upload`,
-    { method: "POST", body: form },
-  );
-  const data: CldJson = (await res.json().catch(() => ({}))) as CldJson;
-  if (!res.ok) {
+  const dataUrl = await readFileAsDataURL(dosya);
+  const imageBase64 = dataUrl.includes(",")
+    ? dataUrl.slice(dataUrl.indexOf(",") + 1)
+    : dataUrl;
+
+  const res = await fetch("/api/cloudinary-upload", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ imageBase64 }),
+  });
+  const txt = await res.text();
+  let json: ApiJson;
+  try {
+    json = JSON.parse(txt) as ApiJson;
+  } catch {
     throw new Error(
-      data.error?.message || `Yükleme hatası (${res.status} ${res.statusText})`,
+      `Cloudinary yanıtı okunamadı (${res.status}): ${txt.slice(0, 200)}`,
     );
   }
-  if (data.error?.message) {
-    throw new Error(data.error.message);
+  if (!res.ok || json.success === false || !json.url) {
+    throw new Error(json.error || `Yükleme hatası (${res.status})`);
   }
-  if (!data.secure_url) {
-    throw new Error("Yanıt geçersiz (görsel URL yok).");
-  }
-  return { secure_url: data.secure_url };
+  return { secure_url: json.url };
 }
