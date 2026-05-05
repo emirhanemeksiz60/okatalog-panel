@@ -3,21 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
 import { useAdminAuth } from "@/context/admin-auth-context";
 import { useToast } from "@/context/toast-context";
 import { LoadingScreen } from "@/components/LoadingScreen";
-import type { PaketKodu } from "@/lib/admin-paketler";
-
-const D = {
-  max_kategori: 5,
-  max_musteri: 50,
-  max_urun: 100,
-  max_varyant: 500,
-  max_fotograf: 500,
-  max_ai_gunluk: 5,
-  aktif_paket: "baslangic" as PaketKodu,
-};
 
 export default function YeniFirma() {
   const { session, ready } = useAdminAuth();
@@ -39,30 +27,22 @@ export default function YeniFirma() {
     }
     setBek(true);
     try {
-      const { data, error } = await supabase
-        .from("firmalar")
-        .insert({
+      const res = await fetch("/api/admin/firmalar", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           firma_kodu: k.trim().toLowerCase(),
           firma_adi: ad.trim(),
           slogan: slogan.trim() || null,
-          logo_url: null,
-          max_kategori: D.max_kategori,
-          max_musteri: D.max_musteri,
-          max_urun: D.max_urun,
-          max_varyant: D.max_varyant,
-          max_fotograf: D.max_fotograf,
-          max_ai_gunluk: D.max_ai_gunluk,
-          ai_kullanim_bugun: 0,
-          aktif_paket: D.aktif_paket,
-          paket_bitis_tarihi: null,
-          notlar: null,
-          aktif: true,
-        })
-        .select("id")
-        .single();
-      if (error) throw error;
+        }),
+      });
+      const j = (await res.json()) as { ok?: boolean; id?: string; error?: string };
+      if (!res.ok || !j.ok || !j.id) {
+        throw new Error(j.error ?? "Kayıt hatası");
+      }
       toast("success", "Firma eklendi.");
-      router.push(`/admin/firmalar/${(data as { id: string }).id}`);
+      router.push(`/admin/firmalar/${j.id}`);
     } catch (err) {
       toast("error", err instanceof Error ? err.message : "Kayıt hatası");
     } finally {

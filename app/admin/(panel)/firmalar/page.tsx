@@ -2,9 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
-import { firmaBasiIstatikler } from "@/lib/admin-aggregates";
-import { firmaCoz } from "@/lib/supabase-firma";
 import type { Firma } from "@/lib/types";
 import { PAKET_DROPDOWN } from "@/lib/admin-paketler";
 import { useAdminAuth } from "@/context/admin-auth-context";
@@ -31,22 +28,16 @@ export default function AdminFirmalar() {
   const yukle = useCallback(async () => {
     setY(true);
     try {
-      const { data, error } = await supabase
-        .from("firmalar")
-        .select("*")
-        .order("firma_kodu", { ascending: true });
-      if (error) throw error;
-      const list = (data as unknown as Record<string, unknown>[])?.map(
-        (r) => firmaCoz(r),
-      ) ?? [];
-      const idler = list.map((l) => l.id);
-      const I = await firmaBasiIstatikler(idler);
-      setRows(
-        list.map((firma) => {
-          const s = I.get(firma.id) ?? { urun: 0, musteri: 0, fotograf: 0 };
-          return { ...firma, u: s.urun, m: s.musteri, f: s.fotograf };
-        }),
-      );
+      const res = await fetch("/api/admin/firmalar", { credentials: "include" });
+      const j = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        rows?: Satir[];
+      };
+      if (!res.ok || !j.ok || !j.rows) {
+        throw new Error(j.error ?? "Yükleme hatası");
+      }
+      setRows(j.rows);
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "Yükleme hatası");
     } finally {

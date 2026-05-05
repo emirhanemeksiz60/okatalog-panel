@@ -4,9 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { tekilRotaParam } from "@/lib/tekil-rota-param";
-import { supabase } from "@/lib/supabase";
-import { firmaCoz, FIRMA_SUTUN_SECIM } from "@/lib/supabase-firma";
-import { firmaKullanimOzet, type FirmaKullanimOzet } from "@/lib/admin-aggregates";
+import type { FirmaKullanimOzet } from "@/lib/admin-aggregates";
 import {
   PAKET_DROPDOWN,
   aktifPaketKoduCoz,
@@ -24,13 +22,6 @@ function bitisGunu(iso: string | null | undefined): string {
   const t = new Date(String(iso));
   if (Number.isNaN(t.getTime())) return String(iso).slice(0, 10);
   return t.toISOString().slice(0, 10);
-}
-
-function ymddenIso(yyyyMmDd: string) {
-  if (!yyyyMmDd) return null;
-  const t = new Date(yyyyMmDd + "T12:00:00.000Z");
-  if (Number.isNaN(t.getTime())) return null;
-  return t.toISOString();
 }
 
 export default function AdminFirmaDuzenle() {
@@ -73,55 +64,40 @@ export default function AdminFirmaDuzenle() {
 
     try {
       if (debugLog) {
-        console.log(
-          "[admin/firmalar/[id]] firmalar sorgusu başlıyor: .from('firmalar').select(…).eq('id', id).maybeSingle()",
-        );
+        console.log("[admin/firmalar/[id]] GET /api/admin/firmalar/:id", { id });
       }
-      const { data, error } = await supabase
-        .from("firmalar")
-        .select(FIRMA_SUTUN_SECIM)
-        .eq("id", id)
-        .maybeSingle();
+      const res = await fetch(
+        `/api/admin/firmalar/${encodeURIComponent(id)}`,
+        { credentials: "include" },
+      );
+      const j = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        firma?: Firma;
+        kullanim?: FirmaKullanimOzet | null;
+        kullanimUyari?: string | null;
+      };
       if (debugLog) {
-        console.log("[admin/firmalar/[id]] firmalar yanıt", { data, error });
+        console.log("[admin/firmalar/[id]] API yanıt", { status: res.status, j });
       }
-      if (error) throw error;
-      if (!data) {
+      if (res.status === 404) {
         if (debugLog) {
-          console.warn(
-            "[admin/firmalar/[id]] 0 satır. Olası nedenler: RLS, id yok, id tipi uyuşmazlığı. Supabase’de `firmalar.id` genelde uuid.",
-            { arananId: id },
-          );
+          console.warn("[admin/firmalar/[id]] 404", { arananId: id });
         }
         setFir(null);
         return;
       }
-      const c = firmaCoz(data);
+      if (!res.ok || !j.ok || !j.firma) {
+        throw new Error(j.error ?? "Firma yüklenemedi");
+      }
+      const c = j.firma;
       setFir(c);
       setF(c);
       setPaketBitisYmd(bitisGunu(c.paket_bitis_tarihi));
-
-      try {
-        if (debugLog) {
-          console.log(
-            "[admin/firmalar/[id]] kullanım istatistikleri (firmaKullanimOzet) …",
-            { firmaId: id },
-          );
-        }
-        setKull(await firmaKullanimOzet(id));
-        setKullanimUyarisi(null);
-      } catch (ke) {
-        console.error(
-          "[admin/firmalar/[id]] firmaKullanimOzet hata (form yine açık; ayrıntı:)",
-          ke,
-        );
-        setKull(null);
-        const m =
-          ke instanceof Error ? ke.message : "Kullanım istatistikleri alınamadı";
-        setKullanimUyarisi(m);
-      }
+      setKull(j.kullanim ?? null);
+      setKullanimUyarisi(j.kullanimUyari ?? null);
     } catch (e) {
-      console.error("[admin/firmalar/[id]] firmalar sorgu hata", e);
+      console.error("[admin/firmalar/[id]] firma yükleme hata", e);
       toast("error", e instanceof Error ? e.message : "Firma yüklenemedi");
       setFir(null);
     } finally {
@@ -148,7 +124,7 @@ export default function AdminFirmaDuzenle() {
       const pak: PaketKodu = aktifPaketKoduCoz(
         f.aktif_paket ?? fir.aktif_paket,
       );
-      const upd: Record<string, unknown> = {
+      const body = {
         firma_kodu: (f.firma_kodu ?? fir.firma_kodu).trim().toLowerCase(),
         firma_adi: (f.firma_adi ?? fir.firma_adi).trim(),
         slogan:
@@ -164,15 +140,20 @@ export default function AdminFirmaDuzenle() {
         max_fotograf: Math.max(0, Number(f.max_fotograf) || 0),
         max_ai_gunluk: Math.max(0, Number(f.max_ai_gunluk) || 5),
         aktif_paket: pak,
-        paket_bitis_tarihi: ymddenIso(paketBitisYmd),
+        paket_bitis_ymd: paketBitisYmd,
         notlar: f.notlar == null ? null : String(f.notlar) || null,
         aktif: Boolean(f.aktif),
       };
-      const { error } = await supabase
-        .from("firmalar")
-        .update(upd)
-        .eq("id", id);
-      if (error) throw error;
+      const res = await fetch(`/api/admin/firmalar/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) {
+        throw new Error(j.error ?? "Kayıt hatası");
+      }
       toast("success", "Kaydedildi.");
       await yukle();
     } catch (e) {
@@ -186,11 +167,14 @@ export default function AdminFirmaDuzenle() {
     if (!id || !fir) return;
     setSifirlaniyor(true);
     try {
-      const { error } = await supabase
-        .from("firmalar")
-        .update({ ai_kullanim_bugun: 0 })
-        .eq("id", id);
-      if (error) throw error;
+      const res = await fetch(
+        `/api/admin/firmalar/${encodeURIComponent(id)}/ai-sifirla`,
+        { method: "POST", credentials: "include" },
+      );
+      const j = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) {
+        throw new Error(j.error ?? "Sıfırlanamadı");
+      }
       setF((x) => ({ ...x, ai_kullanim_bugun: 0 }));
       toast("success", "AI sayacı sıfırlandı (bugün).");
       await yukle();

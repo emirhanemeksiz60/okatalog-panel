@@ -1,5 +1,13 @@
-import { supabase } from "@/lib/supabase";
+/**
+ * Sunucu/API tarafında kullanım içindir (`createFirmaServiceRoleClient`).
+ * `yuklePlatformOzet` hâlâ `app/admin/(panel)/page.tsx` gibi client bileşenlerden
+ * çağrılıyorsa istemciye service role sızmamalı — o sayfa için de API route’a
+ * taşınmalıdır. Admin firmalar akışı: `/api/admin/firmalar`.
+ */
+import { createFirmaServiceRoleClient } from "@/lib/supabase-firma";
 import { toplamFotografGorselUrl } from "@/lib/admin-istatistik";
+
+const supabase = createFirmaServiceRoleClient();
 
 /** `get_firma_istatistik` RPC yanıtı */
 type FirmaIstatistikJson = {
