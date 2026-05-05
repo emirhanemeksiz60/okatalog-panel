@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -25,28 +24,24 @@ export default function DashboardHome() {
     (async () => {
       setLoading(true);
       try {
-        const [u, k, m] = await Promise.all([
-          supabase
-            .from("urunler")
-            .select("id", { count: "exact", head: true })
-            .eq("firma_id", firmaId),
-          supabase
-            .from("kategoriler")
-            .select("id", { count: "exact", head: true })
-            .eq("firma_id", firmaId),
-          supabase
-            .from("musteriler")
-            .select("id", { count: "exact", head: true })
-            .eq("firma_id", firmaId),
-        ]);
-        if (u.error) throw u.error;
-        if (k.error) throw k.error;
-        if (m.error) throw m.error;
+        const res = await fetch("/api/dashboard/data?tip=ozet", {
+          credentials: "include",
+        });
+        const j = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          urun?: number;
+          kategori?: number;
+          musteri?: number;
+        };
+        if (!res.ok || !j.ok || j.urun === undefined || j.kategori === undefined || j.musteri === undefined) {
+          throw new Error(j.error ?? "Özet yüklenemedi.");
+        }
         if (!cancelled) {
           setStats({
-            urun: u.count ?? 0,
-            kategori: k.count ?? 0,
-            musteri: m.count ?? 0,
+            urun: j.urun,
+            kategori: j.kategori,
+            musteri: j.musteri,
           });
         }
       } catch (e) {
