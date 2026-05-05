@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
 import { aktiviteKaydet } from "@/lib/aktivite-logu";
 import { sendPushNotification } from "@/lib/push-service";
 import { useAuth } from "@/context/auth-context";
@@ -44,18 +43,6 @@ const PUSH_METIN: Record<string, string> = {
   reddedildi: "Siparişiniz reddedildi ❌",
 };
 
-function toplamAdet(raw: Record<string, unknown>): number {
-  const n0 = Number(raw.toplam_urun ?? 0);
-  if (Number.isFinite(n0) && n0 > 0) return n0;
-  const n1 = Number(raw.toplam_urun_adedi ?? 0);
-  if (Number.isFinite(n1) && n1 > 0) return n1;
-  const n2 = Number(raw.toplam_adet ?? 0);
-  if (Number.isFinite(n2) && n2 > 0) return n2;
-  const n3 = Number(raw.urun_adedi ?? 0);
-  if (Number.isFinite(n3) && n3 > 0) return n3;
-  return 0;
-}
-
 export default function SiparislerPage() {
   const { session, ready } = useAuth();
   const { show: toast } = useToast();
@@ -70,36 +57,21 @@ export default function SiparislerPage() {
     if (!firmaId) return;
     setLoading(true);
     try {
-      const [sRes, sCountRes] = await Promise.all([
-        supabase
-          .from("siparisler")
-          .select(
-            "id, firma_id, durum, created_at, updated_at, notlar, esnaf_notu, kargo_notu, toplam_urun, musteri_id, musteriler(id, musteri_adi, musteri_kodu)",
-          )
-          .eq("firma_id", firmaId)
-          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("siparisler")
-          .select("id", { count: "exact", head: true })
-          .eq("firma_id", firmaId),
-      ]);
-      if (sRes.error) throw sRes.error;
-      setTotalCount(sCountRes.count ?? 0);
-
-      const siparisler = ((sRes.data as Record<string, unknown>[]) ?? []).map((r) => {
-        const m = r.musteriler as { musteri_adi?: string } | null | undefined;
-        return {
-          id: String(r.id ?? ""),
-          firma_id: String(r.firma_id ?? firmaId),
-          musteri_id: r.musteri_id ? String(r.musteri_id) : null,
-          musteri_adi: m?.musteri_adi ? String(m.musteri_adi) : null,
-          durum: String(r.durum ?? "istek"),
-          created_at: r.created_at ? String(r.created_at) : null,
-          toplam_urun_adedi: toplamAdet(r),
-        };
-      });
-      setRows(siparisler);
+      const res = await fetch(
+        `/api/dashboard/data?tip=siparisler&sayfa=${page + 1}`,
+        { credentials: "include" },
+      );
+      const j = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        rows?: SiparisRow[];
+        totalCount?: number;
+      };
+      if (!res.ok || !j.ok || !j.rows) {
+        throw new Error(j.error ?? "Siparişler yüklenemedi.");
+      }
+      setTotalCount(j.totalCount ?? 0);
+      setRows(j.rows);
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "Siparişler yüklenemedi.");
     } finally {
@@ -121,14 +93,27 @@ export default function SiparislerPage() {
     setSavingId(row.id);
     try {
       try {
-        const { error } = await supabase
-          .from("siparisler")
-          .update({ durum })
-          .eq("id", row.id)
-          .eq("firma_id", firmaId)
-          .select("id,durum")
-          .maybeSingle();
-        if (error) throw error;
+        const res = await fetch("/api/dashboard/mutate", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tip: "siparisler",
+            payload: {
+              action: "durum_guncelle",
+              id: row.id,
+              durum,
+            },
+          }),
+        });
+        const j = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          push_token?: string | null;
+        };
+        if (!res.ok || !j.ok) {
+          throw new Error(j.error ?? "Sipariş güncellenemedi.");
+        }
         await aktiviteKaydet({
           firmaId,
           islem: "siparis_durum_degisti",
@@ -136,32 +121,21 @@ export default function SiparislerPage() {
           hedefId: row.id,
           detay: { eski_durum: row.durum, yeni_durum: durum },
         });
+
+        setRows((prev) =>
+          prev.map((x) => (x.id === row.id ? { ...x, durum } : x)),
+        );
+        toast("success", "Sipariş güncellendi.");
+
+        if (row.musteri_id && PUSH_METIN[durum] && typeof j.push_token === "string") {
+          const token = j.push_token.trim();
+          if (token) {
+            await sendPushNotification(firmaId, token, "oKatalog", PUSH_METIN[durum]);
+          }
+        }
       } catch {
         toast("error", "Sipariş güncellenemedi.");
         return;
-      }
-
-      setRows((prev) =>
-        prev.map((x) => (x.id === row.id ? { ...x, durum } : x)),
-      );
-      toast("success", "Sipariş güncellendi.");
-
-      if (row.musteri_id && PUSH_METIN[durum]) {
-        try {
-          const { data, error: tErr } = await supabase
-            .from("push_tokens")
-            .select("token")
-            .eq("musteri_id", row.musteri_id)
-            .maybeSingle();
-          if (tErr) throw tErr;
-
-          const token = (data as { token?: string } | null)?.token ?? null;
-          if (typeof token === "string" && token.trim()) {
-            await sendPushNotification(firmaId, token, "oKatalog", PUSH_METIN[durum]);
-          }
-        } catch (e) {
-          console.warn("Push gönderilemedi:", e);
-        }
       }
     } finally {
       setSavingId(null);

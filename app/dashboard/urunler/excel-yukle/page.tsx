@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
-import { supabase } from "@/lib/supabase";
 import { yukleFirmaLimitBilgisi } from "@/lib/firma-limit-usage";
 import type { Kategori, Urun } from "@/lib/types";
 import { useAuth } from "@/context/auth-context";
@@ -52,15 +51,6 @@ type ParsedRow = {
   warnings: string[];
   existsInDb: boolean;
 };
-
-function randomHex(): string {
-  if (globalThis.crypto?.getRandomValues) {
-    const arr = new Uint8Array(3);
-    globalThis.crypto.getRandomValues(arr);
-    return `#${[...arr].map((b) => b.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
-  }
-  return `#${Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0").toUpperCase()}`;
-}
 
 function toText(v: unknown): string {
   return String(v ?? "").trim();
@@ -223,22 +213,39 @@ export default function UrunlerExcelYuklePage() {
     setLoading(true);
     try {
       const [katRes, urunRes, lim] = await Promise.all([
-        supabase
-          .from("kategoriler")
-          .select("*")
-          .eq("firma_id", firmaId)
-          .eq("ozel", false)
-          .order("kategori_adi", { ascending: true }),
-        supabase.from("urunler").select("id, urun_kodu").eq("firma_id", firmaId),
+        fetch("/api/dashboard/data?tip=kategoriler&hepsi=1&excel=1", {
+          credentials: "include",
+        }),
+        fetch("/api/dashboard/data?tip=urun_kodlari", {
+          credentials: "include",
+        }),
         yukleFirmaLimitBilgisi(firmaId),
       ]);
-      if (katRes.error) throw katRes.error;
-      if (urunRes.error) throw urunRes.error;
-      setKategoriler((katRes.data as Kategori[]) ?? []);
+      const kj = (await katRes.json()) as {
+        ok?: boolean;
+        error?: string;
+        rows?: Kategori[];
+      };
+      const uj = (await urunRes.json()) as {
+        ok?: boolean;
+        error?: string;
+        urunler?: { id: string; urun_kodu: string }[];
+      };
+      if (!katRes.ok || !kj.ok || !kj.rows) {
+        throw new Error(kj.error ?? "Kategoriler alınamadı.");
+      }
+      if (!urunRes.ok || !uj.ok || !uj.urunler) {
+        throw new Error(uj.error ?? "Ürün kodları alınamadı.");
+      }
+      setKategoriler(
+        kj.rows.sort((a, b) =>
+          a.kategori_adi.localeCompare(b.kategori_adi, "tr"),
+        ),
+      );
       setLimitMaxUrun(lim.limits.max_urun);
       setKullanimUrun(lim.kullanim.urun);
       const m: Record<string, Pick<Urun, "id" | "urun_kodu">> = {};
-      ((urunRes.data as Pick<Urun, "id" | "urun_kodu">[]) ?? []).forEach((u) => {
+      uj.urunler.forEach((u) => {
         m[u.urun_kodu.trim().toLowerCase()] = u;
       });
       setDbByCode(m);
@@ -374,61 +381,53 @@ export default function UrunlerExcelYuklePage() {
     setUploadedCount(0);
     setUploadTotal(uploadRows.length);
     try {
-      for (let i = 0; i < uploadRows.length; i += 1) {
-        const r = uploadRows[i]!;
+      const bodyRows: {
+        existing_urun_id: string | null;
+        urun: Record<string, unknown>;
+        varyantlar: Record<string, unknown>[];
+      }[] = [];
+      for (const r of uploadRows) {
         const kat = kategoriByName[r.kategori_adi.toLowerCase()];
         if (!kat) throw new Error(`Satır ${r.rowNo}: kategori bulunamadı.`);
-
         const exists = dbByCode[r.urun_kodu.toLowerCase()];
-        let urunId: string;
-        const urunPayload = {
-          firma_id: firmaId,
-          kategori_id: kat.id,
-          urun_kodu: r.urun_kodu,
-          barkod: r.barkod,
-          urun_adi: r.urun_adi,
-          detay: r.detay,
-          yeni_mi: r.yeni_mi,
-          guncelleme: r.guncelleme,
-          aktif: true,
-        };
-
-        if (exists?.id) {
-          urunId = exists.id;
-          const u1 = await supabase.from("urunler").update(urunPayload).eq("id", urunId);
-          if (u1.error) throw u1.error;
-          const d = await supabase.from("varyantlar").delete().eq("urun_id", urunId);
-          if (d.error) throw d.error;
-        } else {
-          const u2 = await supabase
-            .from("urunler")
-            .insert(urunPayload)
-            .select("id")
-            .single();
-          if (u2.error) throw u2.error;
-          const createdId = (u2.data as { id: string } | null)?.id;
-          if (!createdId) throw new Error(`Satır ${r.rowNo}: ürün kaydı oluşturulamadı.`);
-          urunId = createdId;
-        }
-
-        const varyantPayload = r.varyantlar.map((v) => ({
-          urun_id: urunId,
-          renk_adi: v.renk_adi,
-          renk_hex: randomHex(),
-          gorsel_url: null as string | null,
-          stok_durumu: v.stok_durumu,
-          stok_miktar: v.stok_miktar,
-          stok_birimi: "adet",
-          min_siparis: null as number | null,
-        }));
-        if (varyantPayload.length > 0) {
-          const v = await supabase.from("varyantlar").insert(varyantPayload);
-          if (v.error) throw v.error;
-        }
-        setUploadedCount(i + 1);
+        bodyRows.push({
+          existing_urun_id: exists?.id ?? null,
+          urun: {
+            kategori_id: kat.id,
+            urun_kodu: r.urun_kodu,
+            barkod: r.barkod,
+            urun_adi: r.urun_adi,
+            detay: r.detay,
+            yeni_mi: r.yeni_mi,
+            guncelleme: r.guncelleme,
+            aktif: true,
+          },
+          varyantlar: r.varyantlar.map((v) => ({
+            renk_adi: v.renk_adi,
+            stok_durumu: v.stok_durumu,
+            stok_miktar: v.stok_miktar,
+            stok_birimi: "adet",
+            min_siparis: null,
+          })),
+        });
       }
 
-      toast("success", `${uploadRows.length} ürün başarıyla yüklendi!`);
+      const res = await fetch("/api/dashboard/mutate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tip: "excel_yukle",
+          payload: { rows: bodyRows },
+        }),
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string; imported?: number };
+      if (!res.ok || !j.ok) {
+        throw new Error(j.error ?? "Toplu yükleme başarısız.");
+      }
+      setUploadedCount(uploadRows.length);
+
+      toast("success", `${j.imported ?? uploadRows.length} ürün başarıyla yüklendi!`);
       setTimeout(() => {
         router.push("/dashboard/urunler");
       }, 700);

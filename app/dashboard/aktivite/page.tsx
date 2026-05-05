@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
-import { supabase } from "@/lib/supabase";
 
 type AktiviteRow = {
   id: string;
@@ -43,14 +42,12 @@ export default function AktivitePage() {
     if (!firmaId) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("aktivite_logu")
-        .select("*")
-        .eq("firma_id", firmaId)
-        .order("created_at", { ascending: false })
-        .limit(100);
-      if (error) throw error;
-      setRows((data as AktiviteRow[]) ?? []);
+      const res = await fetch("/api/dashboard/data?tip=aktivite", {
+        credentials: "include",
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string; rows?: AktiviteRow[] };
+      if (!res.ok || !j.ok) throw new Error(j.error ?? "Aktivite geçmişi yüklenemedi.");
+      setRows(j.rows ?? []);
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "Aktivite geçmişi yüklenemedi.");
     } finally {

@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { useCallback, useEffect, useState } from "react";
 import { aktiviteKaydet } from "@/lib/aktivite-logu";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
@@ -47,53 +46,31 @@ export default function CopKutusuPage() {
 
   const firmaId = session?.firma.id;
 
-  const otuzGunOnceIso = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return d.toISOString();
-  }, []);
-
   const load = useCallback(async () => {
     if (!firmaId) return;
     setLoading(true);
     try {
-      const [uRes, kRes, mRes] = await Promise.all([
-        supabase
-          .from("urunler")
-          .select("id, urun_kodu, urun_adi, deleted_at")
-          .eq("firma_id", firmaId)
-          .not("deleted_at", "is", null)
-          .gte("deleted_at", otuzGunOnceIso)
-          .order("deleted_at", { ascending: false }),
-        supabase
-          .from("kategoriler")
-          .select("id, kategori_adi, deleted_at")
-          .eq("firma_id", firmaId)
-          .not("deleted_at", "is", null)
-          .gte("deleted_at", otuzGunOnceIso)
-          .order("deleted_at", { ascending: false }),
-        supabase
-          .from("musteriler")
-          .select("id, musteri_kodu, musteri_adi, deleted_at")
-          .eq("firma_id", firmaId)
-          .not("deleted_at", "is", null)
-          .gte("deleted_at", otuzGunOnceIso)
-          .order("deleted_at", { ascending: false }),
-      ]);
+      const res = await fetch("/api/dashboard/data?tip=copkutusu", {
+        credentials: "include",
+      });
+      const j = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        urunler?: SilinenUrun[];
+        kategoriler?: SilinenKategori[];
+        musteriler?: SilinenMusteri[];
+      };
+      if (!res.ok || !j.ok) throw new Error(j.error ?? "Çöp kutusu yüklenemedi.");
 
-      if (uRes.error) throw uRes.error;
-      if (kRes.error) throw kRes.error;
-      if (mRes.error) throw mRes.error;
-
-      setUrunler((uRes.data as SilinenUrun[]) ?? []);
-      setKategoriler((kRes.data as SilinenKategori[]) ?? []);
-      setMusteriler((mRes.data as SilinenMusteri[]) ?? []);
+      setUrunler(j.urunler ?? []);
+      setKategoriler(j.kategoriler ?? []);
+      setMusteriler(j.musteriler ?? []);
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "Çöp kutusu yüklenemedi.");
     } finally {
       setLoading(false);
     }
-  }, [firmaId, otuzGunOnceIso, toast]);
+  }, [firmaId, toast]);
 
   useEffect(() => {
     if (!ready || !firmaId) return;
@@ -106,12 +83,18 @@ export default function CopKutusuPage() {
     if (!firmaId) return;
     setRestoringId(id);
     try {
-      const { error } = await supabase
-        .from(table)
-        .update({ deleted_at: null })
-        .eq("id", id)
-        .eq("firma_id", firmaId);
-      if (error) throw error;
+      const res = await fetch("/api/dashboard/mutate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tip: "copkutusu",
+          tablo: table,
+          payload: { action: "geriAl", hedef_tablo: table, id },
+        }),
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) throw new Error(j.error ?? "Geri alma başarısız.");
       if (table === "urunler") {
         const ur = urunler.find((x) => x.id === id);
         await aktiviteKaydet({

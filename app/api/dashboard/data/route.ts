@@ -1,7 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { toplamFotografGorselUrl } from "@/lib/admin-istatistik";
-import type { FirmaLimitBilgisi } from "@/lib/firma-limit-usage";
+import { firmaLimitBilgisiSb } from "@/lib/firma-limit-server";
 import { getFirmaSessionIdFromRequest } from "@/lib/firma-session";
 import { MUSTERI_LISTE_SUTUNLARI } from "@/lib/musteri-sutunlar";
 import {
@@ -12,77 +11,6 @@ import {
 import type { Kategori, Musteri, Urun } from "@/lib/types";
 
 const PAGE_SIZE = 50;
-
-const L = (n: number, d: number) => (Number.isFinite(n) && n > 0 ? n : d);
-
-async function limitBilgisiSb(
-  sb: ReturnType<typeof createFirmaServiceRoleClient>,
-  firmaId: string,
-): Promise<FirmaLimitBilgisi> {
-  const fRes = await sb
-    .from("firmalar")
-    .select("max_kategori, max_musteri, max_urun, max_fotograf")
-    .eq("id", firmaId)
-    .maybeSingle();
-  if (fRes.error) throw fRes.error;
-  const fr = fRes.data as {
-    max_kategori: number | null;
-    max_musteri: number | null;
-    max_urun: number | null;
-    max_fotograf: number | null;
-  } | null;
-  const limits = {
-    max_kategori: L(fr?.max_kategori ?? 10, 10),
-    max_musteri: L(fr?.max_musteri ?? 50, 50),
-    max_urun: L(fr?.max_urun ?? 100, 100),
-    max_fotograf: L(fr?.max_fotograf ?? 500, 500),
-  };
-
-  const [kat, mst, urn, urows] = await Promise.all([
-    sb
-      .from("kategoriler")
-      .select("id", { count: "exact", head: true })
-      .eq("firma_id", firmaId)
-      .eq("ozel", false),
-    sb
-      .from("musteriler")
-      .select("id", { count: "exact", head: true })
-      .eq("firma_id", firmaId),
-    sb
-      .from("urunler")
-      .select("id", { count: "exact", head: true })
-      .eq("firma_id", firmaId),
-    sb.from("urunler").select("id").eq("firma_id", firmaId),
-  ]);
-  if (kat.error) throw kat.error;
-  if (mst.error) throw mst.error;
-  if (urn.error) throw urn.error;
-  if (urows.error) throw urows.error;
-
-  const urunIdler = (urows.data as { id: string }[] | null) ?? [];
-  let fotograf = 0;
-  if (urunIdler.length > 0) {
-    const uids = urunIdler.map((r) => r.id);
-    const { data: vrows, error: ve } = await sb
-      .from("varyantlar")
-      .select("gorsel_url")
-      .in("urun_id", uids);
-    if (ve) throw ve;
-    for (const v of (vrows as { gorsel_url: string | null }[] | null) ?? []) {
-      fotograf += toplamFotografGorselUrl(v.gorsel_url);
-    }
-  }
-
-  return {
-    limits,
-    kullanim: {
-      kategori: kat.count ?? 0,
-      musteri: mst.count ?? 0,
-      urun: urn.count ?? 0,
-      fotograf,
-    },
-  };
-}
 
 function toplamAdet(raw: Record<string, unknown>): number {
   const n0 = Number(raw.toplam_urun ?? 0);
@@ -145,49 +73,228 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const q = request.nextUrl.searchParams;
+
+    if (tip === "limit_bilgisi") {
+      const limitB = await firmaLimitBilgisiSb(sb, firmaId);
+      return NextResponse.json({ ok: true, limitB });
+    }
+
+    if (tip === "urun_detay") {
+      const urunId = (q.get("id") ?? "").trim();
+      if (!urunId) {
+        return NextResponse.json({ ok: false, error: "id zorunlu." }, { status: 400 });
+      }
+      const [katRes, uRes, vRes] = await Promise.all([
+        sb
+          .from("kategoriler")
+          .select("*")
+          .eq("firma_id", firmaId)
+          .is("deleted_at", null)
+          .order("sira", { ascending: true }),
+        sb
+          .from("urunler")
+          .select("*")
+          .eq("id", urunId)
+          .eq("firma_id", firmaId)
+          .maybeSingle(),
+        sb
+          .from("varyantlar")
+          .select("*")
+          .eq("urun_id", urunId)
+          .order("id", { ascending: true }),
+      ]);
+      if (katRes.error) throw katRes.error;
+      if (uRes.error) throw uRes.error;
+      if (vRes.error) throw vRes.error;
+      if (!uRes.data) {
+        return NextResponse.json({ ok: false, error: "Ürün bulunamadı." }, { status: 404 });
+      }
+      return NextResponse.json({
+        ok: true,
+        kategoriler: katRes.data ?? [],
+        urun: uRes.data,
+        varyantlar: vRes.data ?? [],
+      });
+    }
+
+    if (tip === "urun_kodlari") {
+      const { data, error } = await sb
+        .from("urunler")
+        .select("id, urun_kodu")
+        .eq("firma_id", firmaId)
+        .is("deleted_at", null);
+      if (error) throw error;
+      const urunler = ((data ?? []) as { id: string; urun_kodu: string }[]).map((x) => ({
+        id: x.id,
+        urun_kodu: x.urun_kodu,
+      }));
+      const kodlar = urunler.map((x) => x.urun_kodu);
+      return NextResponse.json({ ok: true, urunler, kodlar });
+    }
+
+    if (tip === "urunler_fiyat") {
+      const { data, error } = await sb
+        .from("urunler")
+        .select("urun_kodu, urun_adi, fiyat, aktif")
+        .eq("firma_id", firmaId)
+        .is("deleted_at", null)
+        .order("urun_kodu", { ascending: true });
+      if (error) throw error;
+      return NextResponse.json({ ok: true, urunler: data ?? [] });
+    }
+
+    if (tip === "fiyat_listeleri") {
+      const [lRes, kRowsRes] = await Promise.all([
+        sb
+          .from("fiyat_listeleri")
+          .select("*")
+          .eq("firma_id", firmaId)
+          .eq("aktif", true)
+          .order("liste_adi", { ascending: true }),
+        sb.from("fiyat_liste_kalemleri").select("liste_id").eq("firma_id", firmaId),
+      ]);
+      if (lRes.error) throw lRes.error;
+      if (kRowsRes.error) throw kRowsRes.error;
+      const counts: Record<string, number> = {};
+      for (const r of (kRowsRes.data as { liste_id?: string }[] | null) ?? []) {
+        const lid = String(r.liste_id ?? "");
+        if (!lid) continue;
+        counts[lid] = (counts[lid] ?? 0) + 1;
+      }
+      return NextResponse.json({
+        ok: true,
+        fiyatListeleri: lRes.data ?? [],
+        kalemSayilari: counts,
+      });
+    }
+
+    if (tip === "fiyat_liste_kalemleri") {
+      const listeId = (q.get("liste_id") ?? "").trim();
+      if (!listeId) {
+        return NextResponse.json({ ok: false, error: "liste_id zorunlu." }, { status: 400 });
+      }
+      const { data: liste, error: le } = await sb
+        .from("fiyat_listeleri")
+        .select("id")
+        .eq("id", listeId)
+        .eq("firma_id", firmaId)
+        .maybeSingle();
+      if (le) throw le;
+      if (!liste) {
+        return NextResponse.json({ ok: false, error: "Liste bulunamadı." }, { status: 404 });
+      }
+      const { data: ks, error: ke } = await sb
+        .from("fiyat_liste_kalemleri")
+        .select("*")
+        .eq("firma_id", firmaId)
+        .eq("liste_id", listeId);
+      if (ke) throw ke;
+      const rawRows = (ks ?? []) as Record<string, unknown>[];
+      const kods = [
+        ...new Set(
+          rawRows
+            .map((x) => String(x.urun_kodu ?? "").trim())
+            .filter(Boolean),
+        ),
+      ];
+      const urByKod = new Map<string, { urun_adi: string | null; aktif: boolean; fiyat: unknown }>();
+      if (kods.length > 0) {
+        const { data: urs, error: ue } = await sb
+          .from("urunler")
+          .select("urun_kodu, urun_adi, aktif, fiyat")
+          .eq("firma_id", firmaId)
+          .in("urun_kodu", kods);
+        if (ue) throw ue;
+        for (const u of (urs as {
+          urun_kodu: string;
+          urun_adi: string | null;
+          aktif: boolean;
+          fiyat: unknown;
+        }[]) ?? []) {
+          urByKod.set(u.urun_kodu, u);
+        }
+      }
+      const rows = rawRows.map((k) => {
+        const cod = String(k.urun_kodu ?? "").trim();
+        const urow = urByKod.get(cod);
+        return {
+          id: String(k.id ?? ""),
+          liste_id: String(k.liste_id ?? ""),
+          firma_id: String(k.firma_id ?? ""),
+          urun_kodu: cod,
+          fiyat: Number(k.fiyat ?? 0),
+          urun_adi: urow?.urun_adi ?? null,
+        };
+      });
+      rows.sort((a, b) => a.urun_kodu.localeCompare(b.urun_kodu, "tr"));
+      return NextResponse.json({ ok: true, rows });
+    }
+
     const sayfa = Math.max(
       1,
-      Number.parseInt(request.nextUrl.searchParams.get("sayfa") ?? "1", 10) || 1,
+      Number.parseInt(q.get("sayfa") ?? "1", 10) || 1,
     );
     const pageIdx = sayfa - 1;
 
     if (tip === "kategoriler") {
-      const [katRes, katCountRes, lim] = await Promise.all([
-        sb
-          .from("kategoriler")
-          .select("id, kategori_adi, sira, aktif, ozel, created_at")
-          .eq("firma_id", firmaId)
-          .is("deleted_at", null)
-          .range(pageIdx * PAGE_SIZE, (pageIdx + 1) * PAGE_SIZE - 1)
-          .order("sira", { ascending: true }),
-        sb
-          .from("kategoriler")
-          .select("id", { count: "exact", head: true })
-          .eq("firma_id", firmaId)
-          .is("deleted_at", null),
-        limitBilgisiSb(sb, firmaId),
+      const hepsi =
+        q.get("hepsi") === "1" ||
+        q.get("hepsi") === "true" ||
+        q.get("tum") === "1";
+      const excelListe = q.get("excel") === "1";
+
+      let listQ = sb
+        .from("kategoriler")
+        .select("id, kategori_adi, sira, aktif, ozel, created_at")
+        .eq("firma_id", firmaId)
+        .is("deleted_at", null)
+        .order("sira", { ascending: true });
+      if (excelListe) {
+        listQ = listQ.eq("ozel", false);
+      }
+      if (!hepsi) {
+        listQ = listQ.range(pageIdx * PAGE_SIZE, (pageIdx + 1) * PAGE_SIZE - 1);
+      }
+
+      let katCountQ = sb
+        .from("kategoriler")
+        .select("id", { count: "exact", head: true })
+        .eq("firma_id", firmaId)
+        .is("deleted_at", null);
+      if (excelListe) {
+        katCountQ = katCountQ.eq("ozel", false);
+      }
+
+      const [katCountRes, lim] = await Promise.all([
+        katCountQ,
+        firmaLimitBilgisiSb(sb, firmaId),
       ]);
+      if (katCountRes.error) throw katCountRes.error;
+
+      const katRes = await listQ;
       if (katRes.error) throw katRes.error;
-      const rows =
-        ((katRes.data as Omit<Kategori, "firma_id">[]) ?? []).map((row) => ({
-          ...row,
-          firma_id: firmaId,
-        })) as Kategori[];
+      const rows = ((katRes.data as Omit<Kategori, "firma_id">[]) ?? []).map((row) => ({
+        ...row,
+        firma_id: firmaId,
+      })) as Kategori[];
       return NextResponse.json({
         ok: true,
         rows,
         totalCount: katCountRes.count ?? 0,
         limitB: lim,
-        sayfa,
-        sayfaBoyutu: PAGE_SIZE,
+        sayfa: hepsi ? 1 : sayfa,
+        sayfaBoyutu: hepsi ? Math.max(rows.length, 1) : PAGE_SIZE,
       });
     }
 
     if (tip === "musteriler") {
-      const [mRes, mCountRes, lRes, kRes, uRes, lim] = await Promise.all([
+      const MUSTERI_SECIM = `${MUSTERI_LISTE_SUTUNLARI}, fiyat_listeleri(id, liste_adi, para_birimi, aktif)` as const;
+
+      const [mRes, mCountRes, lim] = await Promise.all([
         sb
           .from("musteriler")
-          .select(MUSTERI_LISTE_SUTUNLARI)
+          .select(MUSTERI_SECIM)
           .eq("firma_id", firmaId)
           .is("deleted_at", null)
           .range(pageIdx * PAGE_SIZE, (pageIdx + 1) * PAGE_SIZE - 1)
@@ -197,41 +304,16 @@ export async function GET(request: NextRequest) {
           .select("id", { count: "exact", head: true })
           .eq("firma_id", firmaId)
           .is("deleted_at", null),
-        sb
-          .from("fiyat_listeleri")
-          .select("*")
-          .eq("firma_id", firmaId)
-          .eq("aktif", true)
-          .order("liste_adi", { ascending: true }),
-        sb.from("fiyat_liste_kalemleri").select("*").eq("firma_id", firmaId),
-        sb
-          .from("urunler")
-          .select("urun_kodu, urun_adi, fiyat, aktif")
-          .eq("firma_id", firmaId),
-        limitBilgisiSb(sb, firmaId),
+        firmaLimitBilgisiSb(sb, firmaId),
       ]);
       if (mRes.error) throw mRes.error;
-      if (lRes.error) throw lRes.error;
-      if (kRes.error) throw kRes.error;
-      if (uRes.error) throw uRes.error;
 
-      const fiyatKalemleri = (
-        ((kRes.data as Record<string, unknown>[]) ?? []).map((k) => ({
-          id: String(k.id ?? ""),
-          liste_id: String(k.liste_id ?? ""),
-          firma_id: String(k.firma_id ?? ""),
-          urun_kodu: String(k.urun_kodu ?? ""),
-          fiyat: Number(k.fiyat ?? 0),
-        }))
-      );
+      const musteriRows = ((mRes.data ?? []) as unknown as Musteri[]) ?? [];
 
       return NextResponse.json({
         ok: true,
-        musteriler: (mRes.data as Musteri[]) ?? [],
+        musteriler: musteriRows,
         totalCount: mCountRes.count ?? 0,
-        fiyatListeleri: lRes.data ?? [],
-        fiyatKalemleri,
-        urunler: uRes.data ?? [],
         limitB: lim,
         sayfa,
         sayfaBoyutu: PAGE_SIZE,

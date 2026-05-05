@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { supabase } from "@/lib/supabase";
-import { FIRMA_SUTUN_SECIM, firmaCoz } from "@/lib/supabase-firma";
 import type { Firma } from "@/lib/types";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
@@ -22,16 +20,15 @@ export default function AyarlarPage() {
     (async () => {
       setLoading(true);
       try {
-        const { data, error } = await supabase
-          .from("firmalar")
-          .select(FIRMA_SUTUN_SECIM)
-          .eq("id", fid)
-          .maybeSingle();
-        if (error) throw error;
-        if (c) return;
-        if (data) {
-          setFirma(firmaCoz(data));
+        const res = await fetch("/api/dashboard/data?tip=ayarlar", {
+          credentials: "include",
+        });
+        const j = (await res.json()) as { ok?: boolean; error?: string; firma?: Firma };
+        if (!res.ok || !j.ok || !j.firma) {
+          throw new Error(j.error ?? "Firma bilgisi yüklenemedi.");
         }
+        if (c) return;
+        setFirma(j.firma);
       } catch (e) {
         if (!c) {
           toast("error", e instanceof Error ? e.message : "Firma bilgisi yüklenemedi.");
@@ -99,21 +96,22 @@ export default function AyarlarPage() {
           type="button"
           onClick={async () => {
             if (!fid) return;
-            const { data, error } = await supabase
-              .from("firmalar")
-              .select(FIRMA_SUTUN_SECIM)
-              .eq("id", fid)
-              .single();
-            if (error) {
-              toast("error", error.message);
-              return;
+            try {
+              const res = await fetch("/api/dashboard/data?tip=ayarlar", {
+                credentials: "include",
+              });
+              const j = (await res.json()) as { ok?: boolean; error?: string; firma?: Firma };
+              if (!res.ok || !j.ok || !j.firma) {
+                toast("error", j.error ?? "Yükleme başarısız.");
+                return;
+              }
+              const next = j.firma;
+              setFirma(next);
+              login({ firma: next, loggedInAt: new Date().toISOString() });
+              toast("success", "Bilgiler tazelendi.");
+            } catch (e) {
+              toast("error", e instanceof Error ? e.message : "Yükleme başarısız.");
             }
-            if (data) {
-              const f = firmaCoz(data);
-              setFirma(f);
-              login({ firma: f, loggedInAt: new Date().toISOString() });
-            }
-            toast("success", "Bilgiler tazelendi.");
           }}
           className="text-sm text-sky-600 hover:underline"
         >

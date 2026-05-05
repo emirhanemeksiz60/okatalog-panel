@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
 import {
   type FirmaLimitBilgisi,
   yukleFirmaLimitBilgisi,
@@ -27,15 +26,20 @@ export default function UrunEklePage() {
       setLoading(true);
       try {
         const [kRes, lim] = await Promise.all([
-          supabase
-            .from("kategoriler")
-            .select("*")
-            .eq("firma_id", firmaId)
-            .order("sira", { ascending: true }),
+          fetch("/api/dashboard/data?tip=kategoriler&hepsi=1", {
+            credentials: "include",
+          }),
           yukleFirmaLimitBilgisi(firmaId),
         ]);
-        if (kRes.error) throw kRes.error;
-        setKategoriler((kRes.data as Kategori[]) ?? []);
+        const kj = (await kRes.json()) as {
+          ok?: boolean;
+          error?: string;
+          rows?: Kategori[];
+        };
+        if (!kRes.ok || !kj.ok || !kj.rows) {
+          throw new Error(kj.error ?? "Kategoriler yüklenemedi.");
+        }
+        setKategoriler(kj.rows);
         setLimitB(lim);
       } catch (e) {
         toast("error", e instanceof Error ? e.message : "Kategoriler yüklenemedi.");

@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
 import { aktiviteKaydet } from "@/lib/aktivite-logu";
-import type { Kategori, Urun } from "@/lib/types";
+import type { Urun } from "@/lib/types";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -36,41 +35,23 @@ export default function UrunlerPage() {
     if (!firmaId) return;
     setLoading(true);
     try {
-      const [uRes, uCountRes] = await Promise.all([
-        supabase
-          .from("urunler")
-          .select(
-            "id, urun_kodu, urun_adi, fiyat, para_birimi, aktif, barkod, kategori_id, created_at, yeni_mi, guncelleme, kategoriler(id, kategori_adi)",
-          )
-          .eq("firma_id", firmaId)
-          .is("deleted_at", null)
-          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
-          .order("urun_kodu", { ascending: true }),
-        supabase
-          .from("urunler")
-          .select("id", { count: "exact", head: true })
-          .eq("firma_id", firmaId)
-          .is("deleted_at", null)
-          .order("urun_kodu", { ascending: true }),
-      ]);
-      if (uRes.error) throw uRes.error;
-      type UrunSatir = Urun & {
-        kategoriler?: Pick<Kategori, "id" | "kategori_adi"> | null;
-      };
-      const satirlar = (uRes.data as unknown as UrunSatir[]) ?? [];
-      const m: Record<string, string> = {};
-      satirlar.forEach((row) => {
-        const kat = row.kategoriler;
-        if (kat?.kategori_adi) m[row.kategori_id] = kat.kategori_adi;
-      });
-      setKatById(m);
-      setRows(
-        satirlar.map((row) => {
-          const { kategoriler: _k, ...u } = row;
-          return { ...u, firma_id: firmaId! } as Urun;
-        }),
+      const res = await fetch(
+        `/api/dashboard/data?tip=urunler&sayfa=${page + 1}`,
+        { credentials: "include" },
       );
-      setTotalCount(uCountRes.count ?? 0);
+      const j = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        rows?: Urun[];
+        katById?: Record<string, string>;
+        totalCount?: number;
+      };
+      if (!res.ok || !j.ok || !j.rows || !j.katById) {
+        throw new Error(j.error ?? "Ürünler yüklenemedi.");
+      }
+      setKatById(j.katById);
+      setRows(j.rows.map((row) => ({ ...row, firma_id: firmaId })));
+      setTotalCount(j.totalCount ?? 0);
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "Ürünler yüklenemedi.");
     } finally {
@@ -95,12 +76,17 @@ export default function UrunlerPage() {
       return;
     }
     try {
-      const d2 = await supabase
-        .from("urunler")
-        .update({ deleted_at: new Date().toISOString() })
-        .eq("id", ur.id)
-        .eq("firma_id", firmaId);
-      if (d2.error) throw d2.error;
+      const res = await fetch("/api/dashboard/mutate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tip: "urunler",
+          payload: { action: "softdelete", id: ur.id },
+        }),
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) throw new Error(j.error ?? "Silinemedi.");
       await aktiviteKaydet({
         firmaId,
         islem: "urun_silindi",

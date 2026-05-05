@@ -2,10 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import { supabase } from "@/lib/supabase";
 import { aktiviteKaydet } from "@/lib/aktivite-logu";
-import { musteriSifreBcryptUret } from "@/lib/musteri-sifre";
-import { MUSTERI_LISTE_SUTUNLARI } from "@/lib/musteri-sutunlar";
 import {
   type FirmaLimitBilgisi,
   limitIletisimMesaj,
@@ -48,14 +45,6 @@ type UrunLite = {
 
 const PARA_BIRIMLERI: ParaBirimi[] = ["TRY", "USD", "EUR", "GBP"];
 
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) {
-    out.push(arr.slice(i, i + size));
-  }
-  return out;
-}
-
 function parsePrice(v: unknown): number | null {
   const t = String(v ?? "").trim().replace(",", ".");
   if (!t) return null;
@@ -80,6 +69,7 @@ export default function MusterilerPage() {
   const [fiyatLoading, setFiyatLoading] = useState(false);
   const [fiyatListeleri, setFiyatListeleri] = useState<FiyatListesi[]>([]);
   const [fiyatKalemleri, setFiyatKalemleri] = useState<FiyatKalem[]>([]);
+  const [kalemSayilari, setKalemSayilari] = useState<Record<string, number>>({});
   const [urunler, setUrunler] = useState<UrunLite[]>([]);
   const [seciliListeId, setSeciliListeId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -98,25 +88,24 @@ export default function MusterilerPage() {
     if (!firmaId) return;
     setLoading(true);
     try {
-      const [mRes, mCountRes, lim] = await Promise.all([
-        supabase
-          .from("musteriler")
-          .select(MUSTERI_LISTE_SUTUNLARI)
-          .eq("firma_id", firmaId)
-          .is("deleted_at", null)
-          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
-          .order("musteri_kodu", { ascending: true }),
-        supabase
-          .from("musteriler")
-          .select("id", { count: "exact", head: true })
-          .eq("firma_id", firmaId)
-          .is("deleted_at", null),
+      const [res, lim] = await Promise.all([
+        fetch(`/api/dashboard/data?tip=musteriler&sayfa=${page + 1}`, {
+          credentials: "include",
+        }),
         yukleFirmaLimitBilgisi(firmaId),
       ]);
-      if (mRes.error) throw mRes.error;
+      const j = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        musteriler?: Musteri[];
+        totalCount?: number;
+      };
+      if (!res.ok || !j.ok || !j.musteriler) {
+        throw new Error(j.error ?? "Müşteriler yüklenemedi.");
+      }
       setLimitB(lim);
-      setTotalCount(mCountRes.count ?? 0);
-      setRows((mRes.data as Musteri[]) ?? []);
+      setTotalCount(j.totalCount ?? 0);
+      setRows(j.musteriler);
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "Müşteriler yüklenemedi.");
     } finally {
@@ -135,36 +124,31 @@ export default function MusterilerPage() {
     if (!firmaId) return;
     setFiyatLoading(true);
     try {
-      const [lRes, kRes, uRes] = await Promise.all([
-        supabase
-          .from("fiyat_listeleri")
-          .select("*")
-          .eq("firma_id", firmaId)
-          .eq("aktif", true)
-          .order("liste_adi", { ascending: true }),
-        supabase
-          .from("fiyat_liste_kalemleri")
-          .select("*")
-          .eq("firma_id", firmaId),
-        supabase
-          .from("urunler")
-          .select("urun_kodu, urun_adi, fiyat, aktif")
-          .eq("firma_id", firmaId),
+      const [lRes, uRes] = await Promise.all([
+        fetch("/api/dashboard/data?tip=fiyat_listeleri", { credentials: "include" }),
+        fetch("/api/dashboard/data?tip=urunler_fiyat", { credentials: "include" }),
       ]);
-      if (lRes.error) throw lRes.error;
-      if (kRes.error) throw kRes.error;
-      if (uRes.error) throw uRes.error;
-      const listeler = (lRes.data as FiyatListesi[]) ?? [];
-      const kalemler = ((kRes.data as Record<string, unknown>[]) ?? []).map((k) => ({
-        id: String(k.id ?? ""),
-        liste_id: String(k.liste_id ?? ""),
-        firma_id: String(k.firma_id ?? ""),
-        urun_kodu: String(k.urun_kodu ?? ""),
-        fiyat: Number(k.fiyat ?? 0),
-      }));
+      const lj = (await lRes.json()) as {
+        ok?: boolean;
+        error?: string;
+        fiyatListeleri?: FiyatListesi[];
+        kalemSayilari?: Record<string, number>;
+      };
+      const uj = (await uRes.json()) as {
+        ok?: boolean;
+        error?: string;
+        urunler?: UrunLite[];
+      };
+      if (!lRes.ok || !lj.ok || !lj.fiyatListeleri) {
+        throw new Error(lj.error ?? "Fiyat listeleri yüklenemedi.");
+      }
+      if (!uRes.ok || !uj.ok || !uj.urunler) {
+        throw new Error(uj.error ?? "Ürünler yüklenemedi.");
+      }
+      const listeler = lj.fiyatListeleri ?? [];
       setFiyatListeleri(listeler);
-      setFiyatKalemleri(kalemler);
-      setUrunler((uRes.data as UrunLite[]) ?? []);
+      setKalemSayilari(lj.kalemSayilari ?? {});
+      setUrunler(uj.urunler);
       setSeciliListeId((prev) => {
         if (prev && listeler.some((x) => x.id === prev)) return prev;
         return listeler[0]?.id ?? null;
@@ -175,6 +159,53 @@ export default function MusterilerPage() {
       setFiyatLoading(false);
     }
   }, [firmaId, toast]);
+
+  useEffect(() => {
+    if (!firmaId || !seciliListeId) {
+      setFiyatKalemleri([]);
+      return;
+    }
+    let stop = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/dashboard/data?tip=fiyat_liste_kalemleri&liste_id=${encodeURIComponent(seciliListeId)}`,
+          { credentials: "include" },
+        );
+        const j = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          rows?: {
+            id: string;
+            liste_id: string;
+            firma_id: string;
+            urun_kodu: string;
+            fiyat: number;
+          }[];
+        };
+        if (stop) return;
+        if (!res.ok || !j.ok || !j.rows) {
+          throw new Error(j.error ?? "Kalemler yüklenemedi.");
+        }
+        setFiyatKalemleri(
+          j.rows.map((k) => ({
+            id: k.id,
+            liste_id: k.liste_id,
+            firma_id: k.firma_id,
+            urun_kodu: k.urun_kodu,
+            fiyat: k.fiyat,
+          })),
+        );
+      } catch (e) {
+        if (!stop) {
+          toast("error", e instanceof Error ? e.message : "Kalemler yüklenemedi.");
+        }
+      }
+    })();
+    return () => {
+      stop = true;
+    };
+  }, [firmaId, seciliListeId, toast]);
 
   useEffect(() => {
     if (!ready || !firmaId) return;
@@ -191,14 +222,6 @@ export default function MusterilerPage() {
     return m;
   }, [rows]);
 
-  const kalemCountByListe = useMemo(() => {
-    const m: Record<string, number> = {};
-    fiyatKalemleri.forEach((k) => {
-      m[k.liste_id] = (m[k.liste_id] ?? 0) + 1;
-    });
-    return m;
-  }, [fiyatKalemleri]);
-
   const seciliListe = useMemo(
     () => fiyatListeleri.find((x) => x.id === seciliListeId) ?? null,
     [fiyatListeleri, seciliListeId],
@@ -213,11 +236,10 @@ export default function MusterilerPage() {
   }, [fiyatListeleri]);
 
   const seciliKalemler = useMemo(() => {
-    if (!seciliListe) return [];
-    return fiyatKalemleri
-      .filter((k) => k.liste_id === seciliListe.id)
-      .sort((a, b) => a.urun_kodu.localeCompare(b.urun_kodu, "tr"));
-  }, [fiyatKalemleri, seciliListe]);
+    return [...fiyatKalemleri].sort((a, b) =>
+      a.urun_kodu.localeCompare(b.urun_kodu, "tr"),
+    );
+  }, [fiyatKalemleri]);
 
   const urunAdByKod = useMemo(() => {
     const m: Record<string, string> = {};
@@ -255,30 +277,45 @@ export default function MusterilerPage() {
     }
     setKaydetListeLoading(true);
     try {
-      const payload = {
-        firma_id: firmaId,
-        liste_adi: listeAdi.trim(),
-        aciklama: listeAciklama.trim() || null,
-        para_birimi: listeParaBirimi,
-        ozel_musteri_id: listeOzelMusteriId || null,
-        aktif: true,
-      };
       if (duzenlenenListe) {
-        const { error } = await supabase
-          .from("fiyat_listeleri")
-          .update(payload)
-          .eq("id", duzenlenenListe.id)
-          .eq("firma_id", firmaId);
-        if (error) throw error;
+        const res = await fetch("/api/dashboard/mutate", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tip: "fiyat_listeleri",
+            payload: {
+              action: "update",
+              id: duzenlenenListe.id,
+              liste_adi: listeAdi.trim(),
+              aciklama: listeAciklama.trim() || null,
+              para_birimi: listeParaBirimi,
+              ozel_musteri_id: listeOzelMusteriId || null,
+            },
+          }),
+        });
+        const j = (await res.json()) as { ok?: boolean; error?: string };
+        if (!res.ok || !j.ok) throw new Error(j.error ?? "Kayıt başarısız.");
         toast("success", "Fiyat listesi güncellendi.");
       } else {
-        const { data, error } = await supabase
-          .from("fiyat_listeleri")
-          .insert(payload)
-          .select("id")
-          .single();
-        if (error) throw error;
-        setSeciliListeId((data as { id: string } | null)?.id ?? null);
+        const res = await fetch("/api/dashboard/mutate", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tip: "fiyat_listeleri",
+            payload: {
+              action: "insert",
+              liste_adi: listeAdi.trim(),
+              aciklama: listeAciklama.trim() || null,
+              para_birimi: listeParaBirimi,
+              ozel_musteri_id: listeOzelMusteriId || null,
+            },
+          }),
+        });
+        const j = (await res.json()) as { ok?: boolean; error?: string; id?: string };
+        if (!res.ok || !j.ok) throw new Error(j.error ?? "Kayıt başarısız.");
+        setSeciliListeId(j.id ?? null);
         toast("success", "Fiyat listesi oluşturuldu.");
       }
       setModalOpen(false);
@@ -299,12 +336,17 @@ export default function MusterilerPage() {
     if (!firmaId) return;
     if (!window.confirm(`"${liste.liste_adi}" listesi pasife alınsın mı?`)) return;
     try {
-      const { error } = await supabase
-        .from("fiyat_listeleri")
-        .update({ aktif: false })
-        .eq("id", liste.id)
-        .eq("firma_id", firmaId);
-      if (error) throw error;
+      const res = await fetch("/api/dashboard/mutate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tip: "fiyat_listeleri",
+          payload: { action: "pasifle", id: liste.id },
+        }),
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) throw new Error(j.error ?? "Liste pasife alınamadı.");
       toast("success", "Liste pasife alındı.");
       await loadFiyatData();
     } catch (e) {
@@ -315,18 +357,23 @@ export default function MusterilerPage() {
   async function excelIndir() {
     if (!firmaId || !seciliListe) return;
     try {
-      const { data: urunRes, error: uErr } = await supabase
-        .from("urunler")
-        .select("urun_kodu, urun_adi, fiyat, aktif")
-        .eq("firma_id", firmaId)
-        .eq("aktif", true)
-        .order("urun_kodu", { ascending: true });
-      if (uErr) throw uErr;
-      const activeUrunler = ((urunRes as Record<string, unknown>[]) ?? []).map((u) => ({
-        urun_kodu: String(u.urun_kodu ?? ""),
-        urun_adi: String(u.urun_adi ?? ""),
-        fiyat: Number(u.fiyat ?? 0),
-      }));
+      const uRes = await fetch("/api/dashboard/data?tip=urunler_fiyat", {
+        credentials: "include",
+      });
+      const uj = (await uRes.json()) as {
+        ok?: boolean;
+        urunler?: UrunLite[];
+      };
+      if (!uRes.ok || !uj.ok || !uj.urunler) {
+        throw new Error("Ürün listesi alınamadı.");
+      }
+      const activeUrunler = (uj.urunler ?? [])
+        .filter((u) => u.aktif)
+        .map((u) => ({
+          urun_kodu: u.urun_kodu,
+          urun_adi: u.urun_adi,
+          fiyat: Number(u.fiyat ?? 0),
+        }));
 
       const mevcutFiyatByKod: Record<string, number> = {};
       seciliKalemler.forEach((k) => {
@@ -399,19 +446,24 @@ export default function MusterilerPage() {
         });
       }
 
-      const del = await supabase
-        .from("fiyat_liste_kalemleri")
-        .delete()
-        .eq("firma_id", firmaId)
-        .eq("liste_id", seciliListe.id);
-      if (del.error) throw del.error;
-
-      const chunks = chunk(kalemler, 500);
-      for (const batch of chunks) {
-        if (batch.length === 0) continue;
-        const ins = await supabase.from("fiyat_liste_kalemleri").insert(batch);
-        if (ins.error) throw ins.error;
-      }
+      const res = await fetch("/api/dashboard/mutate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tip: "fiyat_liste_kalemleri",
+          payload: {
+            action: "toplu_guncelle",
+            liste_id: seciliListe.id,
+            rows: kalemler.map((k) => ({
+              urun_kodu: k.urun_kodu,
+              fiyat: k.fiyat,
+            })),
+          },
+        }),
+      });
+      const mj = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !mj.ok) throw new Error(mj.error ?? "Excel kaydı başarısız.");
       toast("success", `Excel yüklendi. ${kalemler.length} kalem işlendi.`);
       await loadFiyatData();
     } catch (e) {
@@ -453,20 +505,30 @@ export default function MusterilerPage() {
       return;
     }
     try {
-      const sifreHash = await musteriSifreBcryptUret(s);
-      const { data, error } = await supabase
-        .from("musteriler")
-        .insert({
-          firma_id: firmaId!,
-          musteri_kodu: k,
-          musteri_adi: a,
-          fiyat_listesi_id: yeniMusteriFiyatListesiId || null,
-          sifre: sifreHash,
-          aktif: true,
-        })
-        .select(MUSTERI_LISTE_SUTUNLARI)
-        .single();
-      if (error) throw error;
+      const resIns = await fetch("/api/dashboard/mutate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tip: "musteriler",
+          payload: {
+            action: "insert",
+            musteri_kodu: k,
+            musteri_adi: a,
+            fiyat_listesi_id: yeniMusteriFiyatListesiId || null,
+            sifre_plain: s,
+          },
+        }),
+      });
+      const insJ = (await resIns.json()) as {
+        ok?: boolean;
+        error?: string;
+        data?: Musteri;
+      };
+      if (!resIns.ok || !insJ.ok || !insJ.data) {
+        throw new Error(insJ.error ?? "Eklenemedi.");
+      }
+      const data = insJ.data;
       setRows((r) =>
         [...r, data as Musteri].sort((x, y) =>
           x.musteri_kodu.localeCompare(y.musteri_kodu),
@@ -494,12 +556,17 @@ export default function MusterilerPage() {
     if (!firmaId) return;
     if (!window.confirm(`“${m.musteri_adi}” silinsin mi?`)) return;
     try {
-      const { error } = await supabase
-        .from("musteriler")
-        .update({ deleted_at: new Date().toISOString() })
-        .eq("id", m.id)
-        .eq("firma_id", firmaId);
-      if (error) throw error;
+      const res = await fetch("/api/dashboard/mutate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tip: "musteriler",
+          payload: { action: "softdelete", id: m.id },
+        }),
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) throw new Error(j.error ?? "Silinemedi.");
       await aktiviteKaydet({
         firmaId,
         islem: "musteri_silindi",
@@ -713,7 +780,7 @@ export default function MusterilerPage() {
                       <div>
                         <p className="text-sm font-semibold text-slate-800">{l.liste_adi}</p>
                         <p className="mt-0.5 text-xs text-slate-500">
-                          {l.para_birimi} · {kalemCountByListe[l.id] ?? 0} ürün
+                          {l.para_birimi} · {kalemSayilari[l.id] ?? 0} ürün
                         </p>
                         {l.ozel_musteri_id && (
                           <p className="mt-0.5 text-xs text-amber-700">
@@ -944,21 +1011,28 @@ function MusteriRow({
     }
     setSaving(true);
     try {
-      const payload: Record<string, string | boolean | null> = {
+      const bodyPayload: Record<string, unknown> = {
+        action: "update",
+        id: m.id,
         musteri_kodu: kod.trim(),
         musteri_adi: ad.trim(),
         fiyat_listesi_id: fiyatListesiId || null,
         aktif: m.aktif,
       };
       if (sifre.trim().length) {
-        const h = await musteriSifreBcryptUret(sifre.trim());
-        payload.sifre = h;
+        bodyPayload.sifre_plain = sifre.trim();
       }
-      const { error } = await supabase
-        .from("musteriler")
-        .update(payload)
-        .eq("id", m.id);
-      if (error) throw error;
+      const res = await fetch("/api/dashboard/mutate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tip: "musteriler",
+          payload: bodyPayload,
+        }),
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) throw new Error(j.error ?? "Güncellenemedi.");
       setSifre("");
       onGuncellendi();
       toast("success", "Güncellendi.");
@@ -1022,16 +1096,33 @@ function MusteriRow({
           checked={m.aktif}
           onChange={async (e) => {
             const checked = e.target.checked;
-            const { error } = await supabase
-              .from("musteriler")
-              .update({ aktif: checked })
-              .eq("id", m.id);
-            if (error) {
-              toast("error", error.message);
-              return;
+            try {
+              const res = await fetch("/api/dashboard/mutate", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  tip: "musteriler",
+                  payload: {
+                    action: "update",
+                    id: m.id,
+                    musteri_kodu: kod.trim(),
+                    musteri_adi: ad.trim(),
+                    fiyat_listesi_id: fiyatListesiId || null,
+                    aktif: checked,
+                  },
+                }),
+              });
+              const j = (await res.json()) as { ok?: boolean; error?: string };
+              if (!res.ok || !j.ok) {
+                toast("error", j.error ?? "Güncellenemedi.");
+                return;
+              }
+              onGuncellendi();
+              toast("success", "Durum güncellendi.");
+            } catch (err) {
+              toast("error", err instanceof Error ? err.message : "Güncellenemedi.");
             }
-            onGuncellendi();
-            toast("success", "Durum güncellendi.");
           }}
         />
       </td>

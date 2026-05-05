@@ -3,11 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { tekilRotaParam } from "@/lib/tekil-rota-param";
-import {
-  type FirmaLimitBilgisi,
-  yukleFirmaLimitBilgisi,
-} from "@/lib/firma-limit-usage";
-import { supabase } from "@/lib/supabase";
+import { type FirmaLimitBilgisi, yukleFirmaLimitBilgisi } from "@/lib/firma-limit-usage";
 import type { Kategori, Urun, Varyant } from "@/lib/types";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/context/toast-context";
@@ -34,39 +30,39 @@ export default function UrunDuzenlePage() {
     (async () => {
       setLoading(true);
       try {
-        const [kRes, uRes, vRes, lim] = await Promise.all([
-          supabase
-            .from("kategoriler")
-            .select("*")
-            .eq("firma_id", firmaId)
-            .order("sira", { ascending: true }),
-          supabase.from("urunler").select("*").eq("id", id).maybeSingle(),
-          supabase
-            .from("varyantlar")
-            .select("*")
-            .eq("urun_id", id)
-            .order("id", { ascending: true }),
+        const [detailRes, limRes] = await Promise.all([
+          fetch(
+            `/api/dashboard/data?tip=urun_detay&id=${encodeURIComponent(id)}`,
+            { credentials: "include" },
+          ),
           yukleFirmaLimitBilgisi(firmaId),
         ]);
+        const dj = (await detailRes.json()) as {
+          ok?: boolean;
+          error?: string;
+          kategoriler?: Kategori[];
+          urun?: Urun | null;
+          varyantlar?: Varyant[];
+        };
         if (!stop) {
-          setLimitB(lim);
+          setLimitB(limRes);
         }
-        if (kRes.error) throw kRes.error;
-        if (uRes.error) throw uRes.error;
-        if (vRes.error) throw vRes.error;
-        const u = uRes.data as Urun | null;
+        if (!detailRes.ok || !dj.ok) {
+          throw new Error(dj.error ?? "Veri alınamadı.");
+        }
+        const u = (dj.urun as Urun | null) ?? null;
         if (!u || u.firma_id !== firmaId) {
           toast("error", "Ürün bulunamadı veya bu firmaya ait değil.");
           if (!stop) {
             setUrun(null);
             setVaryantlar([]);
-            setKategoriler((kRes.data as Kategori[]) ?? []);
+            setKategoriler(dj.kategoriler ?? []);
           }
         } else {
           if (!stop) {
-            setKategoriler((kRes.data as Kategori[]) ?? []);
+            setKategoriler(dj.kategoriler ?? []);
             setUrun(u);
-            setVaryantlar((vRes.data as Varyant[]) ?? []);
+            setVaryantlar(dj.varyantlar ?? []);
           }
         }
       } catch (e) {

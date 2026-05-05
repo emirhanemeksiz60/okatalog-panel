@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
 import { aktiviteKaydet } from "@/lib/aktivite-logu";
 import {
   type FirmaLimitBilgisi,
@@ -38,25 +37,23 @@ export default function KategorilerPage() {
     if (!firmaId) return;
     setLoading(true);
     try {
-      const [katRes, katCountRes, lim] = await Promise.all([
-        supabase
-          .from("kategoriler")
-          .select("id, kategori_adi, sira, aktif, ozel, created_at")
-          .eq("firma_id", firmaId)
-          .is("deleted_at", null)
-          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
-          .order("sira", { ascending: true }),
-        supabase
-          .from("kategoriler")
-          .select("id", { count: "exact", head: true })
-          .eq("firma_id", firmaId)
-          .is("deleted_at", null),
-        yukleFirmaLimitBilgisi(firmaId),
-      ]);
-      if (katRes.error) throw katRes.error;
-      setLimitB(lim);
-      setTotalCount(katCountRes.count ?? 0);
-      const data = katRes.data;
+      const res = await fetch(
+        `/api/dashboard/data?tip=kategoriler&sayfa=${page + 1}`,
+        { credentials: "include" },
+      );
+      const j = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        rows?: Kategori[];
+        totalCount?: number;
+        limitB?: FirmaLimitBilgisi;
+      };
+      if (!res.ok || !j.ok || !j.rows) {
+        throw new Error(j.error ?? "Kategoriler yüklenemedi.");
+      }
+      setLimitB(j.limitB ?? null);
+      setTotalCount(j.totalCount ?? 0);
+      const data = j.rows;
       const next = sortKategoriler(
         ((data as Omit<Kategori, "firma_id">[]) ?? []).map((k) => ({
           ...k,
@@ -113,28 +110,20 @@ export default function KategorilerPage() {
       return;
     }
     try {
-      const { data: maxSiraData, error: maxSiraError } = await supabase
-        .from("kategoriler")
-        .select("sira")
-        .eq("firma_id", firmaId)
-        .is("deleted_at", null)
-        .order("sira", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (maxSiraError) throw maxSiraError;
-      const nextSira = Number((maxSiraData as { sira?: number } | null)?.sira ?? 0) + 1;
-      const { data, error } = await supabase
-        .from("kategoriler")
-        .insert({
-          firma_id: firmaId!,
-          kategori_adi: t,
-          sira: nextSira,
-          ozel: false,
-          aktif: true,
-        })
-        .select()
-        .single();
-      if (error) throw error;
+      const res = await fetch("/api/dashboard/mutate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tip: "kategoriler",
+          payload: { action: "insert", kategori_adi: t },
+        }),
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string; data?: Kategori };
+      if (!res.ok || !j.ok || !j.data) {
+        throw new Error(j.error ?? "Eklenemedi.");
+      }
+      const data = j.data;
       setYeniAd("");
       setList((L) => sortKategoriler([...L, data as Kategori]));
       const k = data as Kategori;
@@ -169,16 +158,23 @@ export default function KategorilerPage() {
       return;
     }
     try {
-      const { error } = await supabase
-        .from("kategoriler")
-        .update({
-          kategori_adi: t,
-          ozel: ed.ozel,
-          aktif: ed.aktif,
-        })
-        .eq("id", k.id)
-        .eq("firma_id", firmaId);
-      if (error) throw error;
+      const res = await fetch("/api/dashboard/mutate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tip: "kategoriler",
+          payload: {
+            action: "update",
+            id: k.id,
+            kategori_adi: t,
+            ozel: ed.ozel,
+            aktif: ed.aktif,
+          },
+        }),
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) throw new Error(j.error ?? "Güncellenemedi.");
       setList((L) =>
         L.map((x) =>
           x.id === k.id
@@ -202,12 +198,17 @@ export default function KategorilerPage() {
       return;
     }
     try {
-      const { error } = await supabase
-        .from("kategoriler")
-        .update({ deleted_at: new Date().toISOString() })
-        .eq("id", k.id)
-        .eq("firma_id", firmaId);
-      if (error) throw error;
+      const res = await fetch("/api/dashboard/mutate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tip: "kategoriler",
+          payload: { action: "softdelete", id: k.id },
+        }),
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) throw new Error(j.error ?? "Silinemedi.");
       await aktiviteKaydet({
         firmaId,
         islem: "kategori_silindi",
@@ -238,18 +239,17 @@ export default function KategorilerPage() {
       return;
     }
     try {
-      const { error: e1 } = await supabase
-        .from("kategoriler")
-        .update({ sira: b.sira })
-        .eq("id", a.id)
-        .eq("firma_id", firmaId);
-      if (e1) throw e1;
-      const { error: e2 } = await supabase
-        .from("kategoriler")
-        .update({ sira: a.sira })
-        .eq("id", b.id)
-        .eq("firma_id", firmaId);
-      if (e2) throw e2;
+      const res = await fetch("/api/dashboard/mutate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tip: "kategoriler",
+          payload: { action: "swap", id_a: a.id, id_b: b.id },
+        }),
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) throw new Error(j.error ?? "Sıra değiştirilemedi.");
       setList(
         sortKategoriler(
           list.map((x) => {

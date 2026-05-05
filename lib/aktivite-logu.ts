@@ -1,7 +1,7 @@
-import { supabase } from "./supabase";
+/** Panel istemcisi: aktiviteyi cookie oturumuyla API üzerinden kaydeder. */
 
 export async function aktiviteKaydet({
-  firmaId,
+  firmaId: _firmaId,
   kullaniciTipi = "esnaf",
   kullaniciId,
   islem,
@@ -17,13 +17,28 @@ export async function aktiviteKaydet({
   hedefId?: string;
   detay?: Record<string, unknown>;
 }) {
-  await supabase.from("aktivite_logu").insert({
-    firma_id: firmaId,
-    kullanici_tipi: kullaniciTipi,
-    kullanici_id: kullaniciId,
-    islem,
-    hedef_tablo: hedefTablo,
-    hedef_id: hedefId,
-    detay,
-  });
+  try {
+    const res = await fetch("/api/dashboard/mutate", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tip: "aktivite",
+        payload: {
+          action: "kaydet",
+          kullanici_tipi: kullaniciTipi,
+          kullanici_id: kullaniciId,
+          islem,
+          hedef_tablo: hedefTablo,
+          hedef_id: hedefId,
+          detay,
+        },
+      }),
+    });
+    if (!res.ok) {
+      console.warn("aktiviteKaydet HTTP", res.status, await res.text());
+    }
+  } catch (e) {
+    console.warn("aktiviteKaydet", e);
+  }
 }
