@@ -289,9 +289,9 @@ export async function GET(request: NextRequest) {
     }
 
     if (tip === "musteriler") {
-      const MUSTERI_SECIM = `${MUSTERI_LISTE_SUTUNLARI}, fiyat_listeleri(id, liste_adi, para_birimi, aktif)` as const;
+      const MUSTERI_SECIM = `${MUSTERI_LISTE_SUTUNLARI}, fiyat_listeleri!musteriler_fiyat_listesi_id_fkey(id, liste_adi, para_birimi, aktif)` as const;
 
-      const [mRes, mCountRes, lim] = await Promise.all([
+      const [mRes, mCountRes, limRes] = await Promise.all([
         sb
           .from("musteriler")
           .select(MUSTERI_SECIM)
@@ -306,7 +306,34 @@ export async function GET(request: NextRequest) {
           .is("deleted_at", null),
         firmaLimitBilgisiSb(sb, firmaId),
       ]);
-      if (mRes.error) throw mRes.error;
+      if (mRes.error) {
+        console.error("[dashboard/data tip=musteriler] Liste sorgusu hatası:", mRes.error);
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              typeof mRes.error.message === "string"
+                ? mRes.error.message
+                : "Müşteri listesi alınamadı.",
+          },
+          { status: 500 },
+        );
+      }
+      if (mCountRes.error) {
+        console.error("[dashboard/data tip=musteriler] Sayım sorgusu hatası:", mCountRes.error);
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              typeof mCountRes.error.message === "string"
+                ? mCountRes.error.message
+                : "Müşteri sayımı yapılamadı.",
+          },
+          { status: 500 },
+        );
+      }
+
+      const lim = limRes;
 
       const musteriRows = ((mRes.data ?? []) as unknown as Musteri[]) ?? [];
 

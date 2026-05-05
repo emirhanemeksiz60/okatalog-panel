@@ -88,24 +88,26 @@ export default function MusterilerPage() {
     if (!firmaId) return;
     setLoading(true);
     try {
-      const [res, lim] = await Promise.all([
-        fetch(`/api/dashboard/data?tip=musteriler&sayfa=${page + 1}`, {
-          credentials: "include",
-        }),
-        yukleFirmaLimitBilgisi(firmaId),
-      ]);
+      const res = await fetch(`/api/dashboard/data?tip=musteriler&sayfa=${page + 1}`, {
+        credentials: "include",
+      });
       const j = (await res.json()) as {
         ok?: boolean;
         error?: string;
         musteriler?: Musteri[];
         totalCount?: number;
       };
-      if (!res.ok || !j.ok || !j.musteriler) {
+      if (!res.ok || !j.ok || !Array.isArray(j.musteriler)) {
         throw new Error(j.error ?? "Müşteriler yüklenemedi.");
       }
-      setLimitB(lim);
       setTotalCount(j.totalCount ?? 0);
       setRows(j.musteriler);
+      try {
+        setLimitB(await yukleFirmaLimitBilgisi(firmaId));
+      } catch (limErr) {
+        console.warn("Limit bilgisi yüklenemedi:", limErr);
+        setLimitB(null);
+      }
     } catch (e) {
       toast("error", e instanceof Error ? e.message : "Müşteriler yüklenemedi.");
     } finally {
