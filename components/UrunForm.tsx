@@ -253,6 +253,7 @@ export function UrunForm({
       };
 
       const varyantlar = rows.map((v) => ({
+        ...(v.id ? { uid: v.id } : {}),
         renk_adi: v.renk_adi.trim(),
         renk_hex: rastgeleHexRenk(),
         gorsel_url: (() => {

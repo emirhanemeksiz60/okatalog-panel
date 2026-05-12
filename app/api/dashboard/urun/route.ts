@@ -65,6 +65,155 @@ function logDbError(scope: string, e: unknown) {
   console.error(`[api/dashboard/urun ${scope}]`, dbErrorMessage(e), extra, e);
 }
 
+function varyantUidFromPayload(o: Record<string, unknown>): string | null {
+  const raw = o.uid ?? o.id;
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  return s === "" ? null : s;
+}
+
+function varyantPatchFromRow(o: Record<string, unknown>, finalUrunId: string) {
+  const renkAdi = String(o.renk_adi ?? "").trim();
+  if (!renkAdi) return null;
+  return {
+    urun_id: finalUrunId,
+    renk_adi: renkAdi,
+    renk_hex:
+      typeof o.renk_hex === "string" && o.renk_hex.trim()
+        ? o.renk_hex.trim()
+        : rastgeleHexRenk(),
+    gorsel_url: o.gorsel_url == null ? null : o.gorsel_url,
+    stok_durumu: o.stok_durumu ?? null,
+    stok_miktar:
+      o.stok_miktar == null
+        ? null
+        : Number.isFinite(Number(o.stok_miktar))
+          ? Number(o.stok_miktar)
+          : null,
+    stok_birimi: o.stok_birimi == null ? "adet" : String(o.stok_birimi),
+    min_siparis:
+      o.min_siparis == null
+        ? null
+        : Number.isFinite(Number(o.min_siparis))
+          ? Number(o.min_siparis)
+          : null,
+  };
+}
+
+/** Yeni ürün: yalnızca INSERT. Mevcut ürün: UPDATE / INSERT + siparişe bağlı silinmeyenlerde stok_durumu=yok. */
+async function syncVaryantlar(
+  sb: ReturnType<typeof createFirmaServiceRoleClient>,
+  finalUrunId: string,
+  yeniUrun: boolean,
+  varyantlarRaw: unknown[],
+) {
+  type Patch = NonNullable<ReturnType<typeof varyantPatchFromRow>>;
+  const formRows: { uid: string | null; insertRow: Patch; updatePatch: Omit<Patch, "urun_id"> }[] =
+    [];
+
+  for (const v of varyantlarRaw) {
+    const o = v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+    const full = varyantPatchFromRow(o, finalUrunId);
+    if (!full) continue;
+    const { urun_id: _u, ...updatePatch } = full;
+    formRows.push({
+      uid: varyantUidFromPayload(o),
+      insertRow: full,
+      updatePatch,
+    });
+  }
+
+  if (yeniUrun) {
+    if (formRows.length === 0) return;
+    const { error: vIns } = await sb.from("varyantlar").insert(formRows.map((r) => r.insertRow));
+    if (vIns) {
+      logDbError("varyantlar_insert_yeni", vIns);
+      throw new Error(dbErrorMessage(vIns));
+    }
+    return;
+  }
+
+  const { data: dbRows, error: selErr } = await sb
+    .from("varyantlar")
+    .select("id")
+    .eq("urun_id", finalUrunId);
+  if (selErr) {
+    logDbError("varyantlar_select_mevcut", selErr);
+    throw new Error(dbErrorMessage(selErr));
+  }
+  const dbIdSet = new Set((dbRows ?? []).map((r) => (r as { id: string }).id));
+
+  const keepIds = new Set<string>();
+  const toInsert: Patch[] = [];
+
+  for (const row of formRows) {
+    const vid = row.uid;
+    if (vid && dbIdSet.has(vid)) {
+      const { error: upErr } = await sb
+        .from("varyantlar")
+        .update(row.updatePatch)
+        .eq("id", vid)
+        .eq("urun_id", finalUrunId);
+      if (upErr) {
+        logDbError("varyantlar_update", upErr);
+        throw new Error(dbErrorMessage(upErr));
+      }
+      keepIds.add(vid);
+    } else {
+      toInsert.push(row.insertRow);
+    }
+  }
+
+  if (toInsert.length > 0) {
+    const { error: insErr } = await sb.from("varyantlar").insert(toInsert);
+    if (insErr) {
+      logDbError("varyantlar_insert_ek", insErr);
+      throw new Error(dbErrorMessage(insErr));
+    }
+  }
+
+  const toRemove = [...dbIdSet].filter((id) => !keepIds.has(id));
+  if (toRemove.length === 0) return;
+
+  const { data: sipRefRows, error: sipErr } = await sb
+    .from("siparis_kalemleri")
+    .select("varyant_id")
+    .in("varyant_id", toRemove);
+  if (sipErr) {
+    logDbError("siparis_kalemleri_select", sipErr);
+    throw new Error(dbErrorMessage(sipErr));
+  }
+  const siparisVaryantIds = new Set(
+    (sipRefRows ?? [])
+      .map((r) => (r as { varyant_id?: string | null }).varyant_id)
+      .filter((x): x is string => typeof x === "string" && x.length > 0),
+  );
+
+  for (const orphanId of toRemove) {
+    if (siparisVaryantIds.has(orphanId)) {
+      const { error: softErr } = await sb
+        .from("varyantlar")
+        .update({ stok_durumu: "yok" })
+        .eq("id", orphanId)
+        .eq("urun_id", finalUrunId);
+      if (softErr) {
+        logDbError("varyantlar_soft_yok", softErr);
+        throw new Error(dbErrorMessage(softErr));
+      }
+    } else {
+      const { error: delErr } = await sb
+        .from("varyantlar")
+        .delete()
+        .eq("id", orphanId)
+        .eq("urun_id", finalUrunId);
+      if (delErr) {
+        logDbError("varyantlar_delete_guvenli", delErr);
+        throw new Error(dbErrorMessage(delErr));
+      }
+    }
+  }
+}
+
 export async function POST(request: NextRequest) {
   const firmaId = getFirmaSessionIdFromRequest(request);
   if (!firmaId) {
@@ -118,6 +267,7 @@ export async function POST(request: NextRequest) {
 
   const urunFields = pickUrunFields(urunPayload as Record<string, unknown>);
   const insertRow = { ...urunFields, firma_id: firmaId };
+  const yeniUrunKaydi = uid == null;
 
   try {
     let finalId = uid;
@@ -163,49 +313,7 @@ export async function POST(request: NextRequest) {
       finalId = newId;
     }
 
-    const { error: delErr } = await sb.from("varyantlar").delete().eq("urun_id", finalId);
-    if (delErr) {
-      logDbError("varyantlar_delete", delErr);
-      throw new Error(dbErrorMessage(delErr));
-    }
-
-    const toInsert: Record<string, unknown>[] = [];
-    for (const v of varyantlarRaw) {
-      const o = v && typeof v === "object" ? (v as Record<string, unknown>) : {};
-      const renkAdi = String(o.renk_adi ?? "").trim();
-      if (!renkAdi) continue;
-      toInsert.push({
-        urun_id: finalId,
-        renk_adi: renkAdi,
-        renk_hex:
-          typeof o.renk_hex === "string" && o.renk_hex.trim()
-            ? o.renk_hex.trim()
-            : rastgeleHexRenk(),
-        gorsel_url: o.gorsel_url == null ? null : o.gorsel_url,
-        stok_durumu: o.stok_durumu ?? null,
-        stok_miktar:
-          o.stok_miktar == null
-            ? null
-            : Number.isFinite(Number(o.stok_miktar))
-              ? Number(o.stok_miktar)
-              : null,
-        stok_birimi: o.stok_birimi == null ? "adet" : String(o.stok_birimi),
-        min_siparis:
-          o.min_siparis == null
-            ? null
-            : Number.isFinite(Number(o.min_siparis))
-              ? Number(o.min_siparis)
-              : null,
-      });
-    }
-
-    if (toInsert.length > 0) {
-      const { error: vIns } = await sb.from("varyantlar").insert(toInsert);
-      if (vIns) {
-        logDbError("varyantlar_insert", vIns);
-        throw new Error(dbErrorMessage(vIns));
-      }
-    }
+    await syncVaryantlar(sb, finalId, yeniUrunKaydi, varyantlarRaw);
 
     return NextResponse.json({ ok: true, id: finalId });
   } catch (e) {
