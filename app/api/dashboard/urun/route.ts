@@ -33,17 +33,36 @@ function rastgeleHexRenk(): string {
   return `#${n.toString(16).toUpperCase().padStart(6, "0")}`;
 }
 
-function pickUrunRow(
-  urunPayload: Record<string, unknown>,
-  firmaId: string,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = { firma_id: firmaId };
+/** Ürün alanları (firma_id hariç — insert’te ayrı eklenir, update’te .eq ile sabitlenir). */
+function pickUrunFields(urunPayload: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
   for (const k of URUN_PATCH_KEYS) {
     if (Object.prototype.hasOwnProperty.call(urunPayload, k)) {
       out[k] = urunPayload[k];
     }
   }
   return out;
+}
+
+function dbErrorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === "object" && "message" in e) {
+    const m = (e as { message?: unknown }).message;
+    if (typeof m === "string" && m.trim()) return m;
+  }
+  return "Kayıt başarısız.";
+}
+
+function logDbError(scope: string, e: unknown) {
+  const extra =
+    e && typeof e === "object"
+      ? {
+          code: (e as { code?: unknown }).code,
+          details: (e as { details?: unknown }).details,
+          hint: (e as { hint?: unknown }).hint,
+        }
+      : {};
+  console.error(`[api/dashboard/urun ${scope}]`, dbErrorMessage(e), extra, e);
 }
 
 export async function POST(request: NextRequest) {
@@ -97,7 +116,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const row = pickUrunRow(urunPayload as Record<string, unknown>, firmaId);
+  const urunFields = pickUrunFields(urunPayload as Record<string, unknown>);
+  const insertRow = { ...urunFields, firma_id: firmaId };
 
   try {
     let finalId = uid;
@@ -109,20 +129,33 @@ export async function POST(request: NextRequest) {
         .eq("id", uid)
         .eq("firma_id", firmaId)
         .maybeSingle();
-      if (rf) throw rf;
+      if (rf) {
+        logDbError("urun_mevcut_select", rf);
+        throw rf;
+      }
       if (!mevcut) {
         return NextResponse.json({ ok: false, error: "Ürün bulunamadı." }, { status: 404 });
       }
-      const { error: upErr } = await sb.from("urunler").update(row).eq("id", uid).eq("firma_id", firmaId);
-      if (upErr) throw upErr;
+      const { error: upErr } = await sb
+        .from("urunler")
+        .update(urunFields)
+        .eq("id", uid)
+        .eq("firma_id", firmaId);
+      if (upErr) {
+        logDbError("urunler_update", upErr);
+        throw new Error(dbErrorMessage(upErr));
+      }
       finalId = uid;
     } else {
       const { data: ins, error: insErr } = await sb
         .from("urunler")
-        .insert(row)
+        .insert(insertRow)
         .select("id")
         .single();
-      if (insErr) throw insErr;
+      if (insErr) {
+        logDbError("urunler_insert", insErr);
+        throw new Error(dbErrorMessage(insErr));
+      }
       const newId = (ins as { id?: string } | null)?.id;
       if (!newId) {
         return NextResponse.json({ ok: false, error: "Ürün oluşturulamadı." }, { status: 500 });
@@ -131,7 +164,10 @@ export async function POST(request: NextRequest) {
     }
 
     const { error: delErr } = await sb.from("varyantlar").delete().eq("urun_id", finalId);
-    if (delErr) throw delErr;
+    if (delErr) {
+      logDbError("varyantlar_delete", delErr);
+      throw new Error(dbErrorMessage(delErr));
+    }
 
     const toInsert: Record<string, unknown>[] = [];
     for (const v of varyantlarRaw) {
@@ -165,13 +201,17 @@ export async function POST(request: NextRequest) {
 
     if (toInsert.length > 0) {
       const { error: vIns } = await sb.from("varyantlar").insert(toInsert);
-      if (vIns) throw vIns;
+      if (vIns) {
+        logDbError("varyantlar_insert", vIns);
+        throw new Error(dbErrorMessage(vIns));
+      }
     }
 
     return NextResponse.json({ ok: true, id: finalId });
   } catch (e) {
+    logDbError("urun_kaydet_catch", e);
     return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "Kayıt başarısız." },
+      { ok: false, error: dbErrorMessage(e) },
       { status: 500 },
     );
   }
