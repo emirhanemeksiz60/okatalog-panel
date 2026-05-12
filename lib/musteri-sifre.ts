@@ -1,4 +1,6 @@
-import { supabase } from "@/lib/supabase";
+import { createFirmaServiceRoleClient } from "@/lib/supabase-firma";
+
+const supabase = createFirmaServiceRoleClient();
 
 /**
  * Supabase RPC `musteri_sifre_hash` — pgcrypto bcrypt, `musteriler.sifre`e yaz.
