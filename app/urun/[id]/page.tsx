@@ -5,11 +5,10 @@ import Image from "next/image";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { tekilRotaParam } from "@/lib/tekil-rota-param";
-import { supabase } from "@/lib/supabase";
 import { StokDurumuEtiket } from "@/components/StokDurumuEtiket";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { parseGorselUrlList } from "@/lib/gorsel-urls";
-import type { Kategori, Urun, Varyant } from "@/lib/types";
+import type { Urun, Varyant } from "@/lib/types";
 
 function hexIcinSwatch(renkHex: string | null) {
   const t = (renkHex ?? "").trim();
@@ -46,41 +45,45 @@ export default function UrunDetayKatalogPage() {
     setLoading(true);
     setHata(null);
     try {
-      const uRes = await supabase
-        .from("urunler")
-        .select(
-          "id, urun_kodu, urun_adi, detay, fiyat, para_birimi, aktif, yeni_mi, guncelleme, kategori_id, varyantlar(id, renk_adi, renk_hex, gorsel_url, stok_durumu, stok_miktar, stok_birimi, min_siparis)",
-        )
-        .eq("id", id)
-        .maybeSingle();
-      if (uRes.error) throw uRes.error;
-      type UrunVaryantRow = Urun & { varyantlar?: Varyant[] | null };
-      const raw = uRes.data as UrunVaryantRow | null;
-      if (!raw || !raw.aktif) {
+      const res = await fetch(`/api/urun/${encodeURIComponent(id)}`, {
+        method: "GET",
+      });
+      const j = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        urun?: Urun | null;
+        varyantlar?: Varyant[];
+        kategori_adi?: string | null;
+      };
+
+      if (res.status === 404) {
         setUrun(null);
         setVaryantlar([]);
         setKategoriAd(null);
         return;
       }
-      const { varyantlar: vrows, ...urunRest } = raw;
+
+      if (!res.ok || !j.ok || !j.urun) {
+        throw new Error(j.error ?? "Yükleme hatası");
+      }
+
+      const raw = j.urun;
+      if (!raw.aktif) {
+        setUrun(null);
+        setVaryantlar([]);
+        setKategoriAd(null);
+        return;
+      }
+
       setUrun({
-        ...urunRest,
-        firma_id: urunRest.firma_id ?? "",
-        detay: urunRest.detay ?? null,
+        ...raw,
+        firma_id: raw.firma_id ?? "",
+        detay: raw.detay ?? null,
       } as Urun);
-      const v = [...(vrows ?? [])].sort((a, b) => a.id.localeCompare(b.id));
+      const v = [...(j.varyantlar ?? [])].sort((a, b) => a.id.localeCompare(b.id));
       setVaryantlar(v);
       setSecim(0);
-      const { data: kat, error: kE } = await supabase
-        .from("kategoriler")
-        .select("kategori_adi")
-        .eq("id", urunRest.kategori_id)
-        .maybeSingle();
-      if (kE) {
-        setKategoriAd(null);
-      } else {
-        setKategoriAd((kat as Pick<Kategori, "kategori_adi"> | null)?.kategori_adi ?? null);
-      }
+      setKategoriAd(j.kategori_adi ?? null);
     } catch (e) {
       setHata(e instanceof Error ? e.message : "Yükleme hatası");
       setUrun(null);

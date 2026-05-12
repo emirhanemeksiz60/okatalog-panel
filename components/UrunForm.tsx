@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 import {
   STOK_DURUMU_SECENEKLERI,
   STOK_DURUMU_VARSAYILAN,
@@ -253,34 +252,7 @@ export function UrunForm({
         aktif,
       };
 
-      let uid = productId;
-      if (uid) {
-        const { error } = await supabase
-          .from("urunler")
-          .update(payload)
-          .eq("id", uid);
-        if (error) throw error;
-        const { error: dErr } = await supabase
-          .from("varyantlar")
-          .delete()
-          .eq("urun_id", uid);
-        if (dErr) throw dErr;
-      } else {
-        const { data, error } = await supabase
-          .from("urunler")
-          .insert(payload)
-          .select("id")
-          .single();
-        if (error) throw error;
-        uid = data?.id;
-      }
-
-      if (!uid) {
-        throw new Error("Ürün kaydedilemedi.");
-      }
-
-      const toInsert = rows.map((v) => ({
-        urun_id: uid!,
+      const varyantlar = rows.map((v) => ({
         renk_adi: v.renk_adi.trim(),
         renk_hex: rastgeleHexRenk(),
         gorsel_url: (() => {
@@ -293,11 +265,22 @@ export function UrunForm({
         min_siparis: parseOptionalInt(v.minSiparisStr),
       }));
 
-      if (toInsert.length) {
-        const { error: vErr } = await supabase
-          .from("varyantlar")
-          .insert(toInsert);
-        if (vErr) throw vErr;
+      const res = await fetch("/api/dashboard/urun", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tip: "urun_kaydet",
+          payload: {
+            uid: productId ?? null,
+            urunPayload: payload,
+            varyantlar,
+          },
+        }),
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string; id?: string };
+      if (!res.ok || !j.ok) {
+        throw new Error(j.error ?? "Kayıt başarısız.");
       }
 
       toast("success", "Ürün kaydedildi.");
