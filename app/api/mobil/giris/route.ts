@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { createFirmaServiceRoleClient } from "@/lib/supabase-firma";
+import { isFirmaSessionCookieValue } from "@/lib/firma-session";
 import { createMobilToken } from "@/lib/mobil-token";
 
 const FIRMA_SELECT =
@@ -25,6 +26,38 @@ function stripSensitive<T>(value: T): T {
     return out as T;
   }
   return value;
+}
+
+/** Supabase hatasından sadece mesajı alır (şifre/hash asla loglanmaz). */
+function supabaseErrMsg(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === "object" && "message" in e) {
+    const m = (e as { message?: unknown }).message;
+    if (typeof m === "string" && m.trim()) return m;
+  }
+  return "bilinmeyen hata";
+}
+
+/** Esnaf girişinde adım logu: hangi adımda 401'e düşüldüğünü gösterir. */
+function logEsnafAdim(adim: string, detay?: string) {
+  console.error(`[api/mobil/giris esnaf] adim=${adim}${detay ? ` ${detay}` : ""}`);
+}
+
+const ESNAF_USAGE_VARSAYILAN = { urun: 0, kategori: 0, musteri: 0, fotograf: 0 };
+
+/**
+ * firma-login ile aynı çıkarma: string ise trim, skaler ise String(),
+ * ayrıca mobildeki array/obje biçimlerini de kabul eder; sonuç UUID olmalı.
+ */
+function extractFirmaIdFromRpc(data: unknown): string | null {
+  const direct =
+    typeof data === "string"
+      ? data.trim()
+      : data != null && typeof data !== "object"
+        ? String(data).trim()
+        : "";
+  const candidate = direct || parseFirmaIdFromVerifyFirmaPasswordRpc(data) || "";
+  return isFirmaSessionCookieValue(candidate) ? candidate : null;
 }
 
 /** RPC `verify_firma_password` dönüşünden firma UUID çıkarır (string / array / obje biçimleri). */
@@ -187,10 +220,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // tip === "esnaf"
+    // tip === "esnaf" — doğrulama firma-login ile aynı:
+    // RPC (p_firma_kodu, p_sifre) -> uuid; firmalar sorgusunda aktif filtresi YOK
+    // (RPC zaten coalesce(aktif, true) uygular; aktif=NULL satır elenmemeli).
     const fk = String(body.firma_kodu ?? "").trim();
     const sifre = String(body.sifre ?? "");
     if (!fk || !sifre) {
+      logEsnafAdim("eksik_alan", "firma_kodu veya sifre bos");
       return NextResponse.json({ ok: false, error: ESNAF_HATALI }, { status: 401 });
     }
 
@@ -198,10 +234,17 @@ export async function POST(request: NextRequest) {
       p_firma_kodu: fk,
       p_sifre: sifre,
     });
-    if (rpcErr) throw rpcErr;
+    if (rpcErr) {
+      logEsnafAdim("rpc_hata", supabaseErrMsg(rpcErr));
+      return NextResponse.json({ ok: false, error: ESNAF_HATALI }, { status: 401 });
+    }
 
-    const firmaId = parseFirmaIdFromVerifyFirmaPasswordRpc(rpcData);
+    const firmaId = extractFirmaIdFromRpc(rpcData);
     if (!firmaId) {
+      logEsnafAdim(
+        "rpc_sonuc_parse",
+        `rpcData tipi=${rpcData === null ? "null" : Array.isArray(rpcData) ? "array" : typeof rpcData}`,
+      );
       return NextResponse.json({ ok: false, error: ESNAF_HATALI }, { status: 401 });
     }
 
@@ -209,14 +252,23 @@ export async function POST(request: NextRequest) {
       .from("firmalar")
       .select(FIRMA_SELECT)
       .eq("id", firmaId)
-      .eq("aktif", true)
       .maybeSingle();
-    if (firmaErr) throw firmaErr;
+    if (firmaErr) {
+      logEsnafAdim("firmalar_sorgusu_hata", supabaseErrMsg(firmaErr));
+      return NextResponse.json({ ok: false, error: ESNAF_HATALI }, { status: 401 });
+    }
     if (!firma) {
+      logEsnafAdim("firma_bulunamadi", `firma_id=${firmaId}`);
       return NextResponse.json({ ok: false, error: ESNAF_HATALI }, { status: 401 });
     }
 
-    const usage = await fetchEsnafKullanim(sb, String(firma.id));
+    // Kullanım/kota alınamazsa giriş reddedilmez; varsayılanlarla devam edilir.
+    let usage = ESNAF_USAGE_VARSAYILAN;
+    try {
+      usage = await fetchEsnafKullanim(sb, String(firma.id));
+    } catch (e) {
+      logEsnafAdim("kullanim_alinamadi", supabaseErrMsg(e));
+    }
 
     const token = createMobilToken({ mode: "esnaf", firma_id: String(firma.id) });
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getFirmaSessionIdFromRequest } from "@/lib/firma-session";
+import { getMobilSession } from "@/lib/mobil-token";
 
 export const runtime = "nodejs";
 
@@ -19,7 +20,11 @@ function stripDataUrlBase64(s: string): string {
 }
 
 export async function POST(request: NextRequest) {
-  const firmaId = getFirmaSessionIdFromRequest(request);
+  // Panel cookie VEYA mobil esnaf token (firma_id token'dan)
+  const cookieFirmaId = getFirmaSessionIdFromRequest(request);
+  const mobil = cookieFirmaId ? null : getMobilSession(request);
+  const firmaId =
+    cookieFirmaId ?? (mobil && mobil.mode === "esnaf" ? mobil.firma_id : undefined);
   if (!firmaId) {
     return NextResponse.json({ error: "Yetkisiz" }, { status: 401 });
   }
@@ -44,7 +49,8 @@ export async function POST(request: NextRequest) {
     }
 
     const imageRaw = String(body.imageBase64 ?? "").trim();
-    const size = String(body.size ?? "").trim();
+    const sizeRaw = String(body.size ?? "").trim();
+    const size = sizeRaw === "auto" ? "regular" : sizeRaw;
     if (!imageRaw) {
       return NextResponse.json(
         { success: false, error: "imageBase64 zorunlu." },

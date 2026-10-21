@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { cloudinarySunucuBase64Yukle } from "@/lib/cloudinary-upload";
 import { getFirmaSessionIdFromRequest } from "@/lib/firma-session";
+import { getMobilSession } from "@/lib/mobil-token";
 
 export const runtime = "nodejs";
 
@@ -10,7 +11,11 @@ type Body = {
 };
 
 export async function POST(request: NextRequest) {
-  const firmaId = getFirmaSessionIdFromRequest(request);
+  // Panel cookie VEYA mobil esnaf token (firma_id token'dan)
+  const cookieFirmaId = getFirmaSessionIdFromRequest(request);
+  const mobil = cookieFirmaId ? null : getMobilSession(request);
+  const firmaId =
+    cookieFirmaId ?? (mobil && mobil.mode === "esnaf" ? mobil.firma_id : undefined);
   if (!firmaId) {
     return NextResponse.json({ error: "Yetkisiz" }, { status: 401 });
   }
