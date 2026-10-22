@@ -545,11 +545,13 @@ export async function POST(request: NextRequest) {
       }
 
       // Kalanlar: tek UPSERT (tam satırlar, adet/toplam/durum güncellenir)
+      // siparis_kalemleri'nde "barkod" kolonu yok — satırda varsa UPSERT'e sokma
       const upsertRows = kalan.map((k) => {
         const orig = byId.get(k.id)!;
+        const { barkod: _barkod, ...rest } = orig;
         const birim = orig.birim_fiyat == null ? null : Number(orig.birim_fiyat);
         return {
-          ...orig,
+          ...rest,
           adet: k.adet,
           toplam_fiyat: birim == null ? null : birim * k.adet,
           durum: "duzenlendi",

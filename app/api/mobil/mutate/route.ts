@@ -11,32 +11,28 @@ function badRequest(message: string) {
   return NextResponse.json({ ok: false, error: message }, { status: 400 });
 }
 
-function parseSiparisIdFromRpc(data: unknown): string {
-  if (data == null) return "";
-  if (typeof data === "string") return data.trim();
-  if (Array.isArray(data)) return data.length > 0 ? parseSiparisIdFromRpc(data[0]) : "";
-  if (typeof data === "object") {
-    const o = data as Record<string, unknown>;
-    const v = o.siparis_id ?? o.id;
-    return typeof v === "string" ? v.trim() : "";
-  }
-  return "";
+/** Eski doğrudan insert sürümündeki gibi: "default"/boş varyant DB'ye null yazılır */
+function resolveVaryantIdForDb(varyantId: string): string | null {
+  const v = varyantId.trim();
+  if (!v || v === "default") return null;
+  return v;
 }
 
 type CartLineInput = {
   urunId?: unknown;
   varyantId?: unknown;
   urunKodu?: unknown;
-  barkod?: unknown;
   urunAdi?: unknown;
   renkAdi?: unknown;
   adet?: unknown;
+  birimFiyat?: unknown;
   // snake_case kabulü (ileri uyumluluk)
   urun_id?: unknown;
   varyant_id?: unknown;
   urun_kodu?: unknown;
   urun_adi?: unknown;
   renk_adi?: unknown;
+  birim_fiyat?: unknown;
 };
 
 export async function POST(request: NextRequest) {
@@ -88,15 +84,25 @@ export async function POST(request: NextRequest) {
           : []) as CartLineInput[];
       if (rawLines.length === 0) return badRequest("Sepet boş.");
 
-      const kalemler = rawLines.map((k) => ({
-        urun_id: String(k.urunId ?? k.urun_id ?? ""),
-        varyant_id: String(k.varyantId ?? k.varyant_id ?? ""),
-        urun_kodu: String(k.urunKodu ?? k.urun_kodu ?? ""),
-        barkod: (k.barkod as string | null) ?? null,
-        urun_adi: String(k.urunAdi ?? k.urun_adi ?? ""),
-        renk_adi: (k.renkAdi as string | null) ?? (k.renk_adi as string | null) ?? null,
-        adet: Number(k.adet),
-      }));
+      // siparis_kalemleri'nde "barkod" kolonu YOK — eski doğrudan insert
+      // sürümündeki (RPC öncesi) kolon listesi birebir kullanılır.
+      const kalemler = rawLines.map((k) => {
+        const adet = Number(k.adet);
+        const birimRaw = k.birimFiyat ?? k.birim_fiyat;
+        const birimFiyat =
+          birimRaw == null || birimRaw === "" ? null : Number.isFinite(Number(birimRaw)) ? Number(birimRaw) : null;
+        return {
+          urun_id: String(k.urunId ?? k.urun_id ?? ""),
+          varyant_id: resolveVaryantIdForDb(String(k.varyantId ?? k.varyant_id ?? "")),
+          urun_kodu: String(k.urunKodu ?? k.urun_kodu ?? ""),
+          urun_adi: String(k.urunAdi ?? k.urun_adi ?? ""),
+          renk_adi: (k.renkAdi as string | null) ?? (k.renk_adi as string | null) ?? null,
+          adet,
+          birim_fiyat: birimFiyat,
+          toplam_fiyat: birimFiyat == null ? null : birimFiyat * adet,
+          orijinal_adet: adet,
+        };
+      });
       if (kalemler.some((k) => !k.urun_id || !Number.isFinite(k.adet) || k.adet <= 0)) {
         return badRequest("Sepet satırları geçersiz.");
       }
@@ -104,17 +110,54 @@ export async function POST(request: NextRequest) {
       const notlar = typeof notlarRaw === "string" && notlarRaw.trim() ? notlarRaw.trim() : null;
 
       // firma_id / musteri_id HER ZAMAN token'dan
-      const { data, error } = await sb.rpc("create_siparis_from_cart", {
-        p_firma_id: firmaId,
-        p_musteri_id: musteriId,
-        p_notlar: notlar,
-        p_kalemler: kalemler,
-      });
-      if (error) throw error;
-      const siparisId = parseSiparisIdFromRpc(data);
+      // 1) Sipariş başlığı
+      const toplam = kalemler.reduce((s, k) => s + k.adet, 0);
+      const { data: sip, error: sipErr } = await sb
+        .from("siparisler")
+        .insert({
+          firma_id: firmaId,
+          musteri_id: musteriId,
+          durum: "istek",
+          toplam_urun: toplam,
+          notlar,
+          esnaf_notu: null,
+          kargo_notu: null,
+          updated_at: new Date().toISOString(),
+        })
+        .select("id")
+        .maybeSingle();
+      if (sipErr) throw sipErr;
+      const siparisId = sip?.id ? String(sip.id) : "";
       if (!siparisId) {
-        console.error("[api/mobil/mutate siparis_olustur] RPC siparis_id donmedi", data);
         return NextResponse.json({ ok: false, error: GENEL_HATA }, { status: 500 });
+      }
+
+      // 2) Kalemler — hata olursa başlık silinir (yarım sipariş kalmaz)
+      const kalemRows = kalemler.map((k) => ({
+        siparis_id: siparisId,
+        urun_id: k.urun_id,
+        varyant_id: k.varyant_id,
+        urun_kodu: k.urun_kodu,
+        urun_adi: k.urun_adi,
+        renk_adi: k.renk_adi,
+        adet: k.adet,
+        birim_fiyat: k.birim_fiyat,
+        toplam_fiyat: k.toplam_fiyat,
+        orijinal_adet: k.orijinal_adet,
+        durum: "istek",
+      }));
+      const { error: kalErr } = await sb.from("siparis_kalemleri").insert(kalemRows);
+      if (kalErr) {
+        const { error: delErr } = await sb
+          .from("siparisler")
+          .delete()
+          .eq("id", siparisId)
+          .eq("firma_id", firmaId)
+          .eq("musteri_id", musteriId);
+        if (delErr) {
+          console.error("[api/mobil/mutate siparis_olustur baslik_sil]", delErr);
+        }
+        throw kalErr;
       }
 
       const { error: gecErr } = await sb.from("siparis_gecmisi").insert({

@@ -11,7 +11,7 @@ const KATEGORI_SELECT = "id, firma_id, kategori_adi, sira, ozel, aktif, created_
 const SIPARIS_LIST_COLUMNS =
   "id, firma_id, musteri_id, durum, toplam_urun, notlar, esnaf_notu, kargo_notu, created_at, updated_at, onaylandi_at, hazirlaniyor_at, gonderildi_at, reddedildi_at";
 const SIPARIS_KALEM_COLUMNS =
-  "id, siparis_id, urun_id, varyant_id, urun_kodu, barkod, urun_adi, renk_adi, adet, orijinal_adet, durum, birim_fiyat, toplam_fiyat";
+  "id, siparis_id, urun_id, varyant_id, urun_kodu, urun_adi, renk_adi, adet, orijinal_adet, durum, birim_fiyat, toplam_fiyat";
 
 const GENEL_HATA = "Veri alınamadı.";
 
