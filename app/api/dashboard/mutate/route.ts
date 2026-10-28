@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { getFirmaSessionIdFromRequest } from "@/lib/firma-session";
 import { MUSTERI_LISTE_SUTUNLARI } from "@/lib/musteri-sutunlar";
+import { musteriSifreBcryptUret } from "@/lib/musteri-sifre";
 import { createFirmaServiceRoleClient } from "@/lib/supabase-firma";
 
 type Body = {
@@ -227,12 +228,17 @@ export async function POST(request: NextRequest) {
             { status: 400 },
           );
         }
-        const { data: hf, error: hErr } = await sb.rpc("musteri_sifre_hash", {
-          p_plain: s,
-        });
-        if (hErr) throw hErr;
-        if (hf == null || typeof hf !== "string") {
-          return NextResponse.json({ ok: false, error: "Şifre hash üretilemedi." }, { status: 500 });
+        let hf: string;
+        try {
+          hf = await musteriSifreBcryptUret(s);
+        } catch (e) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: e instanceof Error ? e.message : "Şifre hash üretilemedi.",
+            },
+            { status: 500 },
+          );
         }
         const { data, error } = await sb
           .from("musteriler")
@@ -275,14 +281,17 @@ export async function POST(request: NextRequest) {
               { status: 400 },
             );
           }
-          const { data: hf, error: hErr } = await sb.rpc("musteri_sifre_hash", {
-            p_plain: splain,
-          });
-          if (hErr) throw hErr;
-          if (hf == null || typeof hf !== "string") {
-            return NextResponse.json({ ok: false, error: "Şifre hash üretilemedi." }, { status: 500 });
+          try {
+            upd.sifre = await musteriSifreBcryptUret(splain);
+          } catch (e) {
+            return NextResponse.json(
+              {
+                ok: false,
+                error: e instanceof Error ? e.message : "Şifre hash üretilemedi.",
+              },
+              { status: 500 },
+            );
           }
-          upd.sifre = hf;
         }
         const { error } = await sb
           .from("musteriler")
@@ -305,12 +314,17 @@ export async function POST(request: NextRequest) {
             { status: 400 },
           );
         }
-        const { data: hf, error: hErr } = await sb.rpc("musteri_sifre_hash", {
-          p_plain: splain,
-        });
-        if (hErr) throw hErr;
-        if (hf == null || typeof hf !== "string") {
-          return NextResponse.json({ ok: false, error: "Şifre hash üretilemedi." }, { status: 500 });
+        let hf: string;
+        try {
+          hf = await musteriSifreBcryptUret(splain);
+        } catch (e) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: e instanceof Error ? e.message : "Şifre hash üretilemedi.",
+            },
+            { status: 500 },
+          );
         }
         const { error } = await sb
           .from("musteriler")

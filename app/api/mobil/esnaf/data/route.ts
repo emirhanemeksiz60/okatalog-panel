@@ -379,15 +379,30 @@ export async function GET(request: NextRequest) {
         para_birimi: urunCurrencyMap.get(String(k.urun_id)) ?? "TRY",
       }));
 
+      // Mobil SiparisRow.notlar — müşteri notu; kolon SELECT'te var, açıkça koru
+      const siparis = {
+        ...siparisRow,
+        notlar:
+          siparisRow.notlar == null || siparisRow.notlar === ""
+            ? null
+            : String(siparisRow.notlar),
+        esnaf_notu:
+          siparisRow.esnaf_notu == null || siparisRow.esnaf_notu === ""
+            ? null
+            : String(siparisRow.esnaf_notu),
+      };
+
       return NextResponse.json(
         stripSensitive({
           ok: true,
           data: {
-            siparis: siparisRow,
+            siparis,
             kalemler,
             kargoGorselleri: karRes.data ?? [],
             gecmis: gecRes.data ?? [],
             musteri_adi_goster: ad,
+            // Eski/yanlış istemci yolu için üst düzey yansıma (siparis.notlar asıl kaynak)
+            notlar: siparis.notlar,
           },
           error: null,
         }),

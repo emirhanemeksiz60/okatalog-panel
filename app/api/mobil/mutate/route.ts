@@ -106,8 +106,12 @@ export async function POST(request: NextRequest) {
       if (kalemler.some((k) => !k.urun_id || !Number.isFinite(k.adet) || k.adet <= 0)) {
         return badRequest("Sepet satırları geçersiz.");
       }
-      const notlarRaw = body.notlar;
-      const notlar = typeof notlarRaw === "string" && notlarRaw.trim() ? notlarRaw.trim() : null;
+      // Mobil order-service: { islem, notlar, lines } — alternatif adlar da kabul
+      const notlarCandidate = body.notlar ?? body.not ?? body.note ?? body.musteri_notu;
+      const notlar =
+        typeof notlarCandidate === "string" && notlarCandidate.trim()
+          ? notlarCandidate.trim()
+          : null;
 
       // firma_id / musteri_id HER ZAMAN token'dan
       // 1) Sipariş başlığı

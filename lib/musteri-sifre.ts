@@ -1,33 +1,79 @@
+import { compareSync, hashSync } from "bcryptjs";
 import { createFirmaServiceRoleClient } from "@/lib/supabase-firma";
 
-const supabase = createFirmaServiceRoleClient();
-
 /**
- * Supabase RPC `musteri_sifre_hash` — pgcrypto bcrypt, `musteriler.sifre`e yaz.
+ * Müşteri şifresi — panel `musteri_sifre_hash` migration ile aynı algoritma:
+ * pgcrypto `crypt(..., gen_salt('bf', 10))` ≡ bcrypt cost 10.
+ *
+ * Üretimde `musteri_sifre_hash` RPC şema önbelleğinde yoksa (PGRST202)
+ * Node tarafında aynı hash üretilir. Mobil giriş `verify_password` RPC
+ * (pgcrypto crypt) ile doğrular; bcryptjs çıktısı onunla uyumludur.
  */
 export async function musteriSifreBcryptUret(duzMetin: string): Promise<string> {
-  const { data, error } = await supabase.rpc("musteri_sifre_hash", {
-    p_plain: duzMetin,
-  });
-  if (error) throw error;
-  if (data == null || typeof data !== "string") {
-    throw new Error("Sunucu şifre imzası döndürmedi.");
+  const plain = String(duzMetin ?? "").trim();
+  if (plain.length < 4) {
+    throw new Error("Şifre en az 4 karakter olmalı");
   }
-  return data;
+
+  // Panel dashboard/mutate ile aynı RPC çağrısı (varsa kullan)
+  try {
+    const sb = createFirmaServiceRoleClient();
+    const { data, error } = await sb.rpc("musteri_sifre_hash", {
+      p_plain: plain,
+    });
+    if (!error && typeof data === "string" && data.trim()) {
+      return data;
+    }
+    if (error) {
+      console.error(
+        "[musteriSifreBcryptUret] rpc musteri_sifre_hash",
+        (error as { message?: string }).message ?? error,
+      );
+    }
+  } catch (e) {
+    console.error(
+      "[musteriSifreBcryptUret] rpc exception",
+      e instanceof Error ? e.message : e,
+    );
+  }
+
+  // RPC yok/hatalı → migration ile aynı bcrypt cost 10
+  return hashSync(plain, 10);
 }
 
 /**
- * `musteri_sifre_dogrula` — ileride müşteri (katalog) girişinde kullan.
- * `p_stored` veritabanındaki `musteriler.sifre` (bcrypt) sütunudur.
+ * Yerel doğrulama (RPC `musteri_sifre_dogrula` yedeği).
+ * Mobil müşteri girişi asıl olarak `verify_password` kullanır.
  */
 export async function musteriSifreBcryptDogrula(
   duzMetin: string,
   kayitliBcrypt: string,
 ): Promise<boolean> {
-  const { data, error } = await supabase.rpc("musteri_sifre_dogrula", {
-    p_plain: duzMetin,
-    p_stored: kayitliBcrypt,
-  });
-  if (error) throw error;
-  return data === true;
+  const plain = String(duzMetin ?? "");
+  const stored = String(kayitliBcrypt ?? "");
+  if (!plain || !stored) return false;
+
+  try {
+    const sb = createFirmaServiceRoleClient();
+    const { data, error } = await sb.rpc("musteri_sifre_dogrula", {
+      p_plain: plain,
+      p_stored: stored,
+    });
+    if (!error) return data === true;
+    console.error(
+      "[musteriSifreBcryptDogrula] rpc",
+      (error as { message?: string }).message ?? error,
+    );
+  } catch (e) {
+    console.error(
+      "[musteriSifreBcryptDogrula] rpc exception",
+      e instanceof Error ? e.message : e,
+    );
+  }
+
+  try {
+    return compareSync(plain, stored);
+  } catch {
+    return false;
+  }
 }
