@@ -37,8 +37,9 @@ export async function musteriSifreBcryptUret(duzMetin: string): Promise<string> 
     );
   }
 
-  // RPC yok/hatalı → migration ile aynı bcrypt cost 10
-  return hashSync(plain, 10);
+  // RPC yok/hatalı → bcrypt cost 10; pgcrypto crypt() yalnızca "$2a$" önekini tanır
+  // (bcryptjs varsayılanı "$2b$")
+  return hashSync(plain, 10).replace(/^\$2b\$/, "$2a$");
 }
 
 /**
